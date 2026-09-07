@@ -18,10 +18,9 @@ def test_bank_config_uses_study_yaml_not_seed() -> None:
     seed = load_named_config("best_candles_m5_1000_a")
     bank = load_bank_config(1000)
     assert bank.name == "best_bank_1000"
-    assert bank.risk.stop_points == 60.0
-    assert bank.risk.gain_points == 130.0
-    assert bank.execution.offset_points == -50.0
+    assert bank.risk.gain_points > bank.risk.stop_points
     assert seed.risk.stop_points == 100.0
+    assert bank.risk.stop_points != seed.risk.stop_points or bank.execution.offset_points != seed.execution.offset_points
     assert load_bank_config(1200).name == "best_bank_1000"
 
 

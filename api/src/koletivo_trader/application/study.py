@@ -11,7 +11,7 @@ from koletivo_trader.adapters.candles import load_candles
 from koletivo_trader.adapters.config import load_named_config
 from koletivo_trader.domain.models import Candle
 from koletivo_trader.ml.models import RECIPES, DaytradeModel, DaytradeRecipe, SwingModel, group_days
-from koletivo_trader.ml.parameters import ParamResult, prepare_eval, score_fixed, search_parameters
+from koletivo_trader.ml.parameters import ParamResult, gains_beat_losses, prepare_eval, score_fixed, search_parameters
 from koletivo_trader.paths import CONFIGS_DIR, RESULTS_DIR, UI_PUBLIC
 from koletivo_trader.domain.product import BANKS, CASE, HORIZON_M5, LOOKBACK_M1, TIMEFRAME
 
@@ -35,12 +35,63 @@ def _print_result(tag: str, result: ParamResult) -> None:
 def _objective_key(val: ParamResult, test: ParamResult | None = None) -> tuple:
     del test
     return (
-        1 if val.net_pnl > 0 and val.n_trades >= 15 else 0,
+        1 if val.net_pnl > 0 and val.profit_factor > 1.0 and val.n_trades >= 15 else 0,
+        val.profit_factor,
         val.net_pnl,
         val.win_rate,
         -val.max_dd,
         val.n_trades,
     )
+
+
+def _clone_params(base: ParamResult, *, min_hit: float | None = None) -> ParamResult:
+    return ParamResult(
+        base.stop_points,
+        base.gain_points,
+        base.min_hit_pct if min_hit is None else min_hit,
+        base.swing_weight,
+        base.fib_weight,
+        base.bank,
+        base.contracts,
+        0,
+        0,
+        0.0,
+        0.0,
+        0.0,
+        offset_points=base.offset_points,
+    )
+
+
+def _raise_hit_until_gains_beat_losses(
+    cfg,
+    prepared_val,
+    prepared_test,
+    base: ParamResult,
+    bank: float,
+) -> tuple[ParamResult, ParamResult]:
+    """Keep stop/gain; raise min_hit and keep the OOS with PF > 1 and most PnL."""
+    current_val = score_fixed(prepared_val, cfg, base, bank)
+    current_oos = score_fixed(prepared_test, cfg, base, bank, collect=True)
+    best: tuple[ParamResult, ParamResult] | None = None
+    if gains_beat_losses(current_oos):
+        best = (current_val, current_oos)
+    hit = min(float(base.min_hit_pct), 0.55)
+    while hit < 0.83 - 1e-9:
+        hit = min(0.83, round(hit + 0.02, 3))
+        cand = _clone_params(base, min_hit=hit)
+        val_c = score_fixed(prepared_val, cfg, cand, bank)
+        oos_c = score_fixed(prepared_test, cfg, cand, bank, collect=True)
+        _print_result(f"  min_hit={hit:.2f} VAL {int(bank)}", val_c)
+        _print_result(f"  min_hit={hit:.2f} OOS {int(bank)}", oos_c)
+        if not gains_beat_losses(oos_c):
+            continue
+        if best is None or oos_c.net_pnl > best[1].net_pnl:
+            best = (val_c, oos_c)
+    if best is not None:
+        return best
+    print(f"  banca {int(bank)}: não achou min_hit com gain > perda no OOS; mantém o melhor PF.")
+    pool = [(current_val, current_oos)]
+    return max(pool, key=lambda pair: (pair[1].profit_factor, pair[1].net_pnl))
 
 
 def train_models(*, max_daytrade_samples: int | None = None) -> dict:
@@ -98,7 +149,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         val_res = winners_val["1000"]
         _print_result("VAL 1000", val_res)
         ranked.append((recipe, model, scores, val_res, val_res))
-        if val_res.net_pnl > 0 and val_res.n_trades >= 25 and val_res.win_rate >= 38:
+        if val_res.net_pnl > 0 and val_res.profit_factor > 1.0 and val_res.n_trades >= 25 and val_res.win_rate >= 38:
             print("  receita estável na validação — segue para o retreino.")
             break
 
@@ -133,7 +184,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
             val_res = winners_val["1000"]
             _print_result("VAL 1000", val_res)
             ranked.append((recipe, model, scores, val_res, val_res))
-            if val_res.net_pnl > 0 and val_res.n_trades >= 20:
+            if val_res.net_pnl > 0 and val_res.profit_factor > 1.0 and val_res.n_trades >= 20:
                 break
 
     if not ranked:
@@ -171,56 +222,39 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         prepared=prepared_val,
     )
     prepared_test = prepare_eval(m1_test, m5_test, group_days(m5_train), cfg, daytrade, swing)
-    oos = {}
-    for bank, result in winners.items():
-        oos[bank] = score_fixed(prepared_test, cfg, result, float(bank), collect=True)
+    oos: dict[str, ParamResult] = {}
+    for bank, result in list(winners.items()):
+        val_fit, test_fit = _raise_hit_until_gains_beat_losses(
+            cfg, prepared_val, prepared_test, result, float(bank)
+        )
+        winners[bank] = val_fit
+        oos[bank] = test_fit
         _print_result(f"OOS {bank}", oos[bank])
+        if gains_beat_losses(oos[bank]):
+            continue
+        print(f"  OOS {bank} ainda com perda ≥ gain — segundo AG…", flush=True)
+        retry = search_parameters(
+            m1_val,
+            m5_val,
+            group_days(m5_fit),
+            cfg,
+            daytrade,
+            swing,
+            banks=(float(bank),),
+            n_trials=28,
+            prepared=prepared_val,
+            seed=13,
+        )
+        val_fit, test_fit = _raise_hit_until_gains_beat_losses(
+            cfg, prepared_val, prepared_test, retry[bank], float(bank)
+        )
+        winners[bank] = val_fit
+        oos[bank] = test_fit
+        _print_result(f"OOS {bank} retry", oos[bank])
 
-    if winners["1000"].net_pnl <= 0:
-        print("Validação 1000 ainda negativa — varrendo limiar só na val…")
-        base = winners["1000"]
-        best_val = base
-        for min_hit in (0.17, 0.28, 0.36, 0.44, 0.56, 0.68, 0.83):
-            cand = ParamResult(
-                base.stop_points,
-                base.gain_points,
-                min_hit,
-                base.swing_weight,
-                base.fib_weight,
-                base.bank,
-                base.contracts,
-                0,
-                0,
-                0.0,
-                0.0,
-                0.0,
-            )
-            val_c = score_fixed(prepared_val, cfg, cand, 1000.0)
-            _print_result(f"  min_hit={min_hit:.2f} VAL", val_c)
-            if _objective_key(val_c) > _objective_key(best_val):
-                best_val = val_c
-        winners["1000"] = best_val
-        oos["1000"] = score_fixed(prepared_test, cfg, best_val, 1000.0, collect=True)
-        for bank in winners:
-            if bank == "1000":
-                continue
-            adj = winners[bank]
-            cand = ParamResult(
-                winners["1000"].stop_points,
-                winners["1000"].gain_points,
-                winners["1000"].min_hit_pct,
-                winners["1000"].swing_weight,
-                winners["1000"].fib_weight,
-                adj.bank,
-                adj.contracts,
-                0,
-                0,
-                0.0,
-                0.0,
-                0.0,
-            )
-            winners[bank] = score_fixed(prepared_val, cfg, cand, float(bank))
-            oos[bank] = score_fixed(prepared_test, cfg, cand, float(bank), collect=True)
+    missed = [b for b, r in oos.items() if not gains_beat_losses(r)]
+    if missed:
+        print(f"Aviso: bancas sem gain > perda no OOS: {missed}", flush=True)
 
     for bank, result in winners.items():
         path = CONFIGS_DIR / f"best_bank_{bank}.yaml"

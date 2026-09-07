@@ -90,7 +90,7 @@ def test_swing_weight_zero_leaves_daytrade_hit() -> None:
         hit_pct=0.8,
         phrase="x",
         reason="daytrade",
-        predicted_chart_type=ChartType.BREAKOUT,
+        predicted_chart_type=ChartType.IMPULSE_UP,
     )
     ctx = SessionContext(
         as_of=datetime(2026, 3, 12, 17, 0),
@@ -104,7 +104,7 @@ def test_swing_weight_zero_leaves_daytrade_hit() -> None:
     fused = fuse_signals(day, ctx, swing_weight=0.0, min_hit_pct=0.62, minutes_from_open=5)
     assert fused.side is Side.BUY
     assert abs(fused.hit_pct - 0.8) < 1e-9
-    assert fused.predicted_chart_type is ChartType.BREAKOUT
+    assert fused.predicted_chart_type is ChartType.IMPULSE_UP
 
 
 def test_clamp_decider_weights_caps_aux_at_40pct() -> None:
@@ -154,6 +154,32 @@ def test_fib_discord_scales_by_weight() -> None:
     )
     assert fused.side is Side.BUY
     assert abs(fused.hit_pct - 0.80) < 1e-9
+
+
+def test_chart_mismatch_holds() -> None:
+    day = Signal(
+        side=Side.BUY,
+        entry=1000,
+        stop=900,
+        take=1200,
+        chart_type=ChartType.IMPULSE_UP,
+        hit_pct=0.96,
+        phrase="x",
+        reason="daytrade",
+        predicted_chart_type=ChartType.IMPULSE_DOWN,
+    )
+    fused = fuse_signals(day, None, swing_weight=0.0, min_hit_pct=0.50)
+    assert fused.side is Side.HOLD
+    assert fused.reason == "chart_mismatch"
+
+
+def test_gains_beat_losses_requires_profit_factor() -> None:
+    from koletivo_trader.ml.parameters import ParamResult, gains_beat_losses
+
+    good = ParamResult(60, 130, 0.65, 0.0, 0.0, 1000, 1, 20, 10, 50.0, 100.0, 50.0, 1.2)
+    bad = ParamResult(60, 130, 0.65, 0.0, 0.0, 1000, 1, 20, 6, 30.0, -40.0, 80.0, 0.8)
+    assert gains_beat_losses(good)
+    assert not gains_beat_losses(bad)
 
 
 def test_near_gain_pulls_stop_into_profit() -> None:

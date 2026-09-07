@@ -433,6 +433,7 @@ def search_parameters(
     banks: tuple[float, ...] = BANKS,
     n_trials: int = 36,
     prepared: list[_Prepared] | None = None,
+    seed: int = 7,
 ) -> dict[str, ParamResult]:
     del n_trials
     if prepared is None:
@@ -456,7 +457,7 @@ def search_parameters(
                 params["offset_points"],
             )
 
-        elite = run_genetic_search(evaluate, population=24, generations=16, elite=4, seed=7)
+        elite = run_genetic_search(evaluate, population=24, generations=16, elite=4, seed=seed)
         picked = _score_prepared(
             prepared,
             cfg,
@@ -512,6 +513,7 @@ def _fold_score(
     wrs: list[float] = []
     dds: list[float] = []
     n_trades: list[int] = []
+    pfs: list[float] = []
     for fold in folds:
         result = _score_prepared(
             fold, cfg, stop, gain, min_hit, swing_w, bank, fib_w, offset_points
@@ -520,8 +522,11 @@ def _fold_score(
         wrs.append(result.win_rate / 100.0)
         dds.append(result.max_dd / max(bank, 1.0))
         n_trades.append(result.n_trades)
+        pfs.append(result.profit_factor)
     if min(n_trades) < 6 or sum(n_trades) < 24:
         return -1e6
+    if min(pfs) <= 1.0:
+        return -1e5
     median_pnl = float(np.median(pnls))
     mean_wr = float(np.mean(wrs))
     worst_dd = float(np.max(dds))
@@ -540,6 +545,15 @@ def _fold_score(
         + gain / max(stop, 1.0) * 1.2
         - worst_dd * 45.0
     )
+
+
+def gains_beat_losses(result: ParamResult, *, min_trades: int = 12) -> bool:
+    """Gross wins exceed gross losses (PF > 1) with a usable sample."""
+    if result.n_trades < min_trades:
+        return False
+    if result.net_pnl <= 0:
+        return False
+    return result.profit_factor > 1.0
 
 
 def score_fixed(

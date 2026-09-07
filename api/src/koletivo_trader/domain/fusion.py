@@ -64,6 +64,13 @@ def fuse_signals(
     if side in {Side.BUY, Side.SELL} and fused < min_hit_pct:
         side = Side.HOLD
         reason = "low_hit"
+    elif (
+        side in {Side.BUY, Side.SELL}
+        and predicted is not None
+        and predicted != daytrade.chart_type
+    ):
+        side = Side.HOLD
+        reason = "chart_mismatch"
     elif signed_swing < 0 and side in {Side.BUY, Side.SELL}:
         reason = "swing_drag" if reason == "daytrade" else reason
     phrase = phrase_for(
