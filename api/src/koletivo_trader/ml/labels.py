@@ -111,6 +111,27 @@ def direction_delta(window: list[Candle], *, mult: float = 0.7, floor: float = 2
     return float(min(cap, max(floor, round(atr * mult / 5.0) * 5.0)))
 
 
+def same_day_m1(
+    m1: list[Candle],
+    start: datetime,
+    *,
+    index: dict | None = None,
+    n: int = 180,
+) -> list[Candle]:
+    """M1 path from `start` inclusive, same civil day, capped at n bars. Train/backtest Y only."""
+    idx_map = index if index is not None else {c.timestamp: i for i, c in enumerate(m1)}
+    i = idx_map.get(start)
+    if i is None:
+        return []
+    day = start.date()
+    out: list[Candle] = []
+    for candle in m1[i : i + n]:
+        if candle.timestamp.date() != day:
+            break
+        out.append(candle)
+    return out
+
+
 def leak_free_windows(
     m1: list[Candle],
     m5: list[Candle],
@@ -133,6 +154,8 @@ def leak_free_windows(
             continue
         window = m1[idx + 1 - lookback : idx + 1]
         if len(window) != lookback:
+            continue
+        if window[-1].timestamp >= future[0].timestamp:
             continue
         out.append((window, future, future[0]))
     return out

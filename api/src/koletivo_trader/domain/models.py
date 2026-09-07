@@ -42,6 +42,7 @@ class Signal:
     day_type: DayType | None = None
     swing_signal: Side | None = None
     sent: bool = False
+    predicted_chart_type: ChartType | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +51,9 @@ class Signal:
             "stop": self.stop,
             "take": self.take,
             "chart_type": self.chart_type.value,
+            "predicted_chart_type": None
+            if self.predicted_chart_type is None
+            else self.predicted_chart_type.value,
             "hit_pct": self.hit_pct,
             "phrase": self.phrase,
             "reason": self.reason,

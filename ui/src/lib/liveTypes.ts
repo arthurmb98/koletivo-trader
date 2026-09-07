@@ -5,6 +5,7 @@ export type SignalSnap = {
   take: number
   reason: string
   chart_type?: string
+  predicted_chart_type?: string | null
   hit_pct?: number
   phrase?: string
   day_type?: string | null

@@ -21,6 +21,7 @@ from koletivo_trader.ml.labels import (
     label_side,
     leak_free_windows,
     prior_m5_bars,
+    same_day_m1,
     simulate_touch,
 )
 
@@ -106,6 +107,8 @@ class DaytradeModel:
         self.recipe = recipe or DaytradeRecipe()
         self._dir = None
         self._meta = None
+        self._chart = None
+        self._chart_enc = LabelEncoder().fit([item.value for item in ChartType])
         self._fitted = False
         self.label_stop = 50.0
         self.label_gain = 100.0
@@ -159,6 +162,7 @@ class DaytradeModel:
         del stop_points, gain_points
         windows = leak_free_windows(m1, m5)
         m5_index = {c.timestamp: i for i, c in enumerate(m5)}
+        m1_index = {c.timestamp: i for i, c in enumerate(m1)}
         rows = []
         kept = 0
         for window, future, entry_bar in windows:
@@ -167,7 +171,8 @@ class DaytradeModel:
             kept += 1
             if kept % 3:
                 continue
-            rows.append((window, future, entry_bar, prior_m5_bars(m5, entry_bar, index=m5_index)))
+            path = same_day_m1(m1, entry_bar.timestamp, index=m1_index, n=15)
+            rows.append((window, path or future, entry_bar, prior_m5_bars(m5, entry_bar, index=m5_index)))
         if max_samples and len(rows) > max_samples:
             rng = np.random.default_rng(7)
             pick = rng.choice(len(rows), size=max_samples, replace=False)
@@ -178,11 +183,16 @@ class DaytradeModel:
         x_meta: list[np.ndarray] = []
         y_meta: list[int] = []
         t_meta: list[datetime] = []
+        x_chart: list[np.ndarray] = []
+        y_chart: list[str] = []
         n_buy = n_sell = n_hold = 0
         for window, future, entry_bar, prior in rows:
             stop, gain = adaptive_barriers(window, stop_mult=self.recipe.stop_mult, gain_mult=self.recipe.gain_mult)
             side = self._direction(window, entry_bar, future)
             feats = daytrade_features(window, prior)
+            if len(future) >= 8:
+                x_chart.append(feats)
+                y_chart.append(classify_chart(future[:15]).value)
             if side is Side.BUY:
                 n_buy += 1
                 x_dir.append(feats)
@@ -238,6 +248,15 @@ class DaytradeModel:
                 clf.fit(xm[:cut], ym[:cut])
             self._meta = _calibrate(clf, xm[cut:], ym[cut:])
             meta_acc = float((self._meta.predict(xm) == ym).mean())
+        self._chart = None
+        chart_acc = 0.0
+        if len(y_chart) >= 80:
+            xc = np.vstack(x_chart)
+            yc = self._chart_enc.transform(y_chart)
+            clf = _hgb(max_depth=4, max_iter=140, min_samples_leaf=40)
+            clf.fit(xc, yc)
+            self._chart = clf
+            chart_acc = float((self._chart.predict(xc) == yc).mean())
         self._fitted = True
         total = n_buy + n_sell + n_hold
         return {
@@ -249,6 +268,7 @@ class DaytradeModel:
             "n_buy": float(n_buy),
             "n_sell": float(n_sell),
             "recipe": self.recipe.name,
+            "chart_acc": chart_acc,
         }
 
     def score_matrix(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -311,6 +331,7 @@ class DaytradeModel:
         slope, _ = _linreg(closes)
         slope_n = slope * max(len(closes), 1) / scale
         heuristic = heuristic_side(classify_chart(m1_window), slope_n)
+        predicted_chart: ChartType | None = None
         if self._fitted:
             p_buy, p_sell, q_buy, q_sell, chart = self._proba(m1_window, prior_m5)
             if p_buy >= p_sell:
@@ -320,11 +341,15 @@ class DaytradeModel:
             hit = float(q)
             if p_dir < 0.52 or q < self.min_score:
                 side = Side.HOLD
+            if self._chart is not None:
+                feats = daytrade_features(m1_window, prior_m5).reshape(1, -1)
+                idx = int(self._chart.predict(feats)[0])
+                predicted_chart = ChartType(self._chart_enc.inverse_transform([idx])[0])
         else:
             chart = classify_chart(m1_window)
             side = heuristic
             hit = 0.55 if side in {Side.BUY, Side.SELL} else 0.35
-        phrase = phrase_for(side, chart, hit)
+        phrase = phrase_for(side, chart, hit, predicted_chart=predicted_chart)
         return Signal(
             side=side,
             entry=entry,
@@ -334,6 +359,7 @@ class DaytradeModel:
             hit_pct=hit,
             phrase=phrase,
             reason="daytrade",
+            predicted_chart_type=predicted_chart,
         )
 
 
@@ -365,7 +391,14 @@ class SwingModel:
             if len(prev) < 10 or len(nxt) < 4:
                 continue
             delta = direction_delta(prev[-15:] if len(prev) >= 15 else prev, mult=0.5, floor=40.0, cap=120.0)
-            side = first_touch_side(nxt[0].open, delta, nxt[:6] if len(nxt) >= 6 else nxt)
+            open_px = nxt[0].open
+            horizon = nxt[:3]
+            side = label_side(open_px, stop_points, gain_points, horizon)
+            if side is Side.HOLD:
+                side = first_touch_side(open_px, delta, nxt[:6] if len(nxt) >= 6 else nxt)
+            nxt_day = classify_day(nxt)
+            if nxt_day in {DayType.VOLATILE, DayType.NON_TREND} and side in {Side.BUY, Side.SELL}:
+                side = Side.HOLD
             x_rows.append(swing_features(prev))
             y_side.append(side.value)
             y_next.append(classify_day(nxt).value)

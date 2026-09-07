@@ -5,11 +5,16 @@ import numpy as np
 from koletivo_trader.domain.enums import ChartType, DayType
 from koletivo_trader.domain.market import classify_chart, classify_day
 from koletivo_trader.domain.models import Candle
+from koletivo_trader.domain.volume import volume_pattern_features
 
 DAY_INDEX = {item: i for i, item in enumerate(DayType)}
 CHART_INDEX = {item: i for i, item in enumerate(ChartType)}
 PRIOR_M5_DIM = 12
 STRUCT_DIM = 27
+N_BLOCKS = 3
+BLOCK_M1 = 5
+BLOCK_OHLC_VOL_DIM = N_BLOCKS * (BLOCK_M1 * 4 + BLOCK_M1)
+VOL_SIG_DIM = 10
 
 
 def _linreg(values: np.ndarray) -> tuple[float, float]:
@@ -50,6 +55,35 @@ def window_vector(candles: list[Candle], expected: int = 15) -> np.ndarray:
                 (bar.close - last) / scale,
             ]
         )
+    return np.asarray(vals, dtype=float)
+
+
+def m1_block_vectors(candles: list[Candle], n_blocks: int = N_BLOCKS, block: int = BLOCK_M1) -> np.ndarray:
+    """3 blocks of 5 M1: 20 ATR-normalized OHLC + 5 volume ratios per block."""
+    expected = n_blocks * block
+    dim = n_blocks * (block * 4 + block)
+    if not candles:
+        return np.zeros(dim, dtype=float)
+    bars = list(candles[-expected:])
+    while len(bars) < expected:
+        bars.insert(0, bars[0])
+    last = bars[-1].close
+    scale = max(atr_proxy(bars), 1e-9)
+    vol_scale = max(float(np.mean([max(c.volume, 0.0) for c in bars])), 1e-9)
+    vals: list[float] = []
+    for b in range(n_blocks):
+        chunk = bars[b * block : (b + 1) * block]
+        for bar in chunk:
+            vals.extend(
+                [
+                    (bar.open - last) / scale,
+                    (bar.high - last) / scale,
+                    (bar.low - last) / scale,
+                    (bar.close - last) / scale,
+                ]
+            )
+        for bar in chunk:
+            vals.append(max(bar.volume, 0.0) / vol_scale)
     return np.asarray(vals, dtype=float)
 
 
@@ -175,12 +209,13 @@ def prior_m5_features(prior: list[Candle] | None) -> np.ndarray:
 
 
 def daytrade_features(candles: list[Candle], prior_m5: list[Candle] | None = None) -> np.ndarray:
-    ohlc = window_vector(candles, 15)
+    blocks = m1_block_vectors(candles)
     struct = _structure_features(candles)
+    vol_sig = volume_pattern_features(candles)
     chart = classify_chart(candles)
     onehot = np.zeros(len(ChartType), dtype=float)
     onehot[CHART_INDEX[chart]] = 1.0
-    return np.concatenate([ohlc, struct, onehot, prior_m5_features(prior_m5)])
+    return np.concatenate([blocks, struct, vol_sig, onehot, prior_m5_features(prior_m5)])
 
 
 def slope_norm(candles: list[Candle]) -> float:

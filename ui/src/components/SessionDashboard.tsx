@@ -280,6 +280,14 @@ export function SessionDashboard({ snap, emptyHint }: { snap: LiveSnap; emptyHin
               {CHART_PT[snap.signal?.chart_type ?? ''] || snap.signal?.chart_type || 'aguardando'}
             </p>
           </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Próximos 15 min:{' '}
+            <span className="font-medium text-foreground">
+              {CHART_PT[snap.signal?.predicted_chart_type ?? ''] ||
+                snap.signal?.predicted_chart_type ||
+                '—'}
+            </span>
+          </p>
           <p className="mt-3 text-sm text-foreground">
             {snap.signal?.phrase || snap.signal?.reason || 'Aguardando o fechamento do candle de 5 min.'}
           </p>
@@ -431,6 +439,7 @@ export function SessionDashboard({ snap, emptyHint }: { snap: LiveSnap; emptyHin
                 <th className="px-4 py-3">Hora</th>
                 <th className="px-4 py-3">Lado</th>
                 <th className="px-4 py-3">Gráfico</th>
+                <th className="px-4 py-3">Próx. 15 min</th>
                 <th className="px-4 py-3">Acerto</th>
                 <th className="px-4 py-3">Frase</th>
               </tr>
@@ -438,7 +447,7 @@ export function SessionDashboard({ snap, emptyHint }: { snap: LiveSnap; emptyHin
             <tbody>
               {snap.signals.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-muted-foreground" colSpan={5}>
+                  <td className="px-4 py-6 text-muted-foreground" colSpan={6}>
                     Ainda sem sinal neste pregão. O motor decide no fechamento de cada M5.
                   </td>
                 </tr>
@@ -450,6 +459,9 @@ export function SessionDashboard({ snap, emptyHint }: { snap: LiveSnap; emptyHin
                       <SideMark side={s.side} />
                     </td>
                     <td className="px-4 py-2">{CHART_PT[s.chart_type ?? ''] || s.chart_type || '—'}</td>
+                    <td className="px-4 py-2">
+                      {CHART_PT[s.predicted_chart_type ?? ''] || s.predicted_chart_type || '—'}
+                    </td>
                     <td className="px-4 py-2 tabular-nums">
                       {s.hit_pct != null ? pct(s.hit_pct <= 1 ? s.hit_pct * 100 : s.hit_pct) : '—'}
                     </td>

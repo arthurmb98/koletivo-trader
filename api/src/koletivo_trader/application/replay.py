@@ -7,9 +7,10 @@ from typing import Any
 from koletivo_trader.adapters.candles import load_candles
 from koletivo_trader.adapters.config import load_named_config
 from koletivo_trader.domain.enums import Side, TradeResult
+from koletivo_trader.domain.fibonacci import fib_boost
 from koletivo_trader.domain.fusion import fuse_signals
 from koletivo_trader.domain.models import Trade
-from koletivo_trader.domain.risk import RiskCalculator, contracts_for_bank
+from koletivo_trader.domain.risk import RiskCalculator, contracts_for_bank, round_to_tick
 from koletivo_trader.domain.session import SessionFilter
 from koletivo_trader.ml.labels import simulate_touch
 from koletivo_trader.ml.models import DaytradeModel, SwingModel, group_days
@@ -184,12 +185,17 @@ class ReplayEngine:
                     min_hit_pct=cfg.filters.min_hit_pct,
                     minutes_from_open=session.minutes_from_open(bar.timestamp),
                     first_block_minutes=cfg.filters.first_block_minutes,
+                    fib_weight=cfg.filters.fib_weight,
+                    fib_boost=fib_boost(raw.side, entry, window, tick=float(cfg.instrument.tick_size)),
                 )
                 payload = fused.to_dict()
                 payload["t"] = bar.timestamp.isoformat()
                 signals.append(payload)
                 if fused.side is Side.HOLD:
                     continue
+                offset = float(getattr(cfg.execution, "offset_points", 0.0) or 0.0)
+                entry = round_to_tick(entry + offset, float(cfg.instrument.tick_size))
+                fused.entry = entry
                 fused.stop, fused.take = risk.levels(fused.side, entry)
                 future = day_bars[j + 1 : j + 4]
                 result = simulate_touch(fused.side, entry, cfg.risk.stop_points, cfg.risk.gain_points, future)

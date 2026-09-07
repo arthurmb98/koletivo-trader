@@ -21,9 +21,10 @@ from koletivo_trader.adapters.mt5.session import (
 )
 from koletivo_trader.domain.copy import phrase_for
 from koletivo_trader.domain.enums import ChartType, OrderMode, Side, TradeResult
+from koletivo_trader.domain.fibonacci import fib_boost
 from koletivo_trader.domain.fusion import fuse_signals
 from koletivo_trader.domain.models import Candle, Position, SessionContext, Signal, Trade
-from koletivo_trader.domain.risk import RiskCalculator, contracts_for_bank, protect_levels
+from koletivo_trader.domain.risk import RiskCalculator, contracts_for_bank, protect_levels, round_to_tick
 from koletivo_trader.domain.session import SessionFilter
 from koletivo_trader.ml.models import DaytradeModel, SwingModel, group_days
 from koletivo_trader.paths import RESULTS_DIR
@@ -396,6 +397,12 @@ class LiveEngine:
         prior_m5 = m5[:-1][-6:]
         raw = self.daytrade.predict(window, last.close, stop, take, prior_m5)
         minutes = self.session.minutes_from_open(last.timestamp)
+        boost = fib_boost(
+            raw.side,
+            last.close,
+            window,
+            tick=float(self.cfg.instrument.tick_size),
+        )
         fused = fuse_signals(
             raw,
             self.context,
@@ -403,10 +410,15 @@ class LiveEngine:
             min_hit_pct=self.cfg.filters.min_hit_pct,
             minutes_from_open=minutes,
             first_block_minutes=self.cfg.filters.first_block_minutes,
+            fib_weight=self.cfg.filters.fib_weight,
+            fib_boost=boost,
         )
         if fused.side in {Side.BUY, Side.SELL}:
-            fused.stop, fused.take = self.risk.levels(fused.side, last.close)
-            fused.entry = last.close
+            tick = float(self.cfg.instrument.tick_size)
+            offset = float(getattr(self.cfg.execution, "offset_points", 0.0) or 0.0)
+            entry = round_to_tick(last.close + offset, tick)
+            fused.stop, fused.take = self.risk.levels(fused.side, entry)
+            fused.entry = entry
         self.signal = fused
         row = fused.to_dict()
         row["t"] = now.isoformat()

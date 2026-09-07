@@ -78,12 +78,14 @@ class FilterConfig:
     gold_hours_only: bool = True
     min_hit_pct: float = 0.62
     swing_weight: float = 0.15
+    fib_weight: float = 0.0
     first_block_minutes: float = 15.0
 
 
 @dataclass
 class ExecutionConfig:
     entry_mode: str = "market_open"
+    offset_points: float = 0.0
     max_tick_age_ms: int = 1500
     in_position_poll_ms: int = 20
     idle_poll_ms: int = 100

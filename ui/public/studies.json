@@ -1,30 +1,40 @@
 {
-  "generated_at": "2026-09-07T09:48:17.712055",
+  "generated_at": "2026-09-07T12:29:13.883390",
   "disclaimer": "Não é recomendação de investimento. Resultado passado não garante resultado futuro.",
   "how_it_works": [
     "O swing lê o pregão anterior (M5) e classifica o tipo de dia.",
-    "O daytrade lê 15 candles de 1 min e decide compra, venda ou não fazer nada para os próximos 15 min.",
-    "Ordem armada sai a mercado com stop e gain já definidos. Perto do alvo o stop sobe para travar lucro."
+    "O daytrade lê 15 M1 em 3 blocos de 5 min (preço + volume) e decide compra, venda ou não fazer nada.",
+    "Swing e Fibonacci entram na fusão só se o peso for maior que zero. Ordem armada sai com stop e gain."
   ],
   "insights": {
     "worked": [
-      "Fusão swing + daytrade evita operar mercado atípico.",
-      "Stop/gain fixos na ordem."
+      "Receita ft_atr_gold (first_touch_atr).",
+      "Meta-label P(gain) filtra operações; rótulo first-touch evita colapso em HOLD."
     ],
     "failed": [
       "Acerto direcional puro de regressão linear no trader-api era ~49%."
     ],
     "improve": [
-      "Recalibrar parâmetros por banca com a busca Optuna."
+      "Recalibrar parâmetros por banca com o algoritmo genético na validação 2024 H2."
+    ],
+    "recipe_screen": [
+      {
+        "recipe": "ft_atr_gold",
+        "mode": "first_touch_atr",
+        "val_pnl": 2394.0,
+        "test_pnl": 2394.0,
+        "test_trades": 496,
+        "test_win_rate": 44.75806451612903
+      }
     ]
   },
   "parecer": {
     "headline": "Robô Koletivo Trader: swing de contexto + daytrade de 15x1min.",
     "ml_hit": {
-      "m1": 0.6202,
+      "m1": 0.5961196787719423,
       "m5": 840.0
     },
-    "n_months_note": "Teste 2025–2026.",
+    "n_months_note": "Teste 2025–2026 (fora da amostra).",
     "monthly": [],
     "strategy": [
       "15 candles M1 → sinal para 3 M5",
@@ -78,7 +88,7 @@
   "timeframes": {
     "m1": {
       "leakage": {
-        "n_train": 40000,
+        "n_train": 14555,
         "n_test_original": 0,
         "n_removed": 0,
         "n_test_clean": 0,
@@ -92,14 +102,14 @@
         "test_end": "2026-08-26"
       },
       "model_test": {
-        "test_direction_hit": 0.6202,
+        "test_direction_hit": 0.5961196787719423,
         "test_mae_close": 0,
         "test_rmse_close": 0
       }
     },
     "m5": {
       "leakage": {
-        "n_train": 40000,
+        "n_train": 14555,
         "n_test_original": 0,
         "n_removed": 0,
         "n_test_clean": 0,
@@ -113,7 +123,7 @@
         "test_end": "2026-08-26"
       },
       "model_test": {
-        "test_direction_hit": 0.6202,
+        "test_direction_hit": 0.5961196787719423,
         "test_mae_close": 0,
         "test_rmse_close": 0
       }
@@ -125,22 +135,22 @@
         "n_configs": 3,
         "leaderboard": [
           {
-            "net_pnl": 0.0,
-            "n_trades": 0,
-            "win_rate": 0.0,
-            "profit_factor": 1.0
+            "net_pnl": 1989.0,
+            "n_trades": 1385,
+            "win_rate": 31.624548736462092,
+            "profit_factor": 1.2333685322069694
           },
           {
-            "net_pnl": 0.0,
-            "n_trades": 0,
-            "win_rate": 0.0,
-            "profit_factor": 1.0
+            "net_pnl": 1062.0,
+            "n_trades": 1336,
+            "win_rate": 36.30239520958084,
+            "profit_factor": 1.0959956612130526
           },
           {
-            "net_pnl": 0.0,
-            "n_trades": 0,
-            "win_rate": 0.0,
-            "profit_factor": 1.0
+            "net_pnl": 5310.0,
+            "n_trades": 1336,
+            "win_rate": 36.30239520958084,
+            "profit_factor": 1.0959956612130526
           }
         ]
       }
@@ -171,8 +181,8 @@
               },
               "risk": {
                 "mode": "fixed",
-                "stop_points": 120.0,
-                "gain_points": 200.0,
+                "stop_points": 40.0,
+                "gain_points": 125.0,
                 "rr_ratio": 2.0,
                 "atr_period": 14,
                 "trailing_enabled": true,
@@ -193,12 +203,14 @@
                 "gold_hours_only": true,
                 "min_hit_pct": 0.62,
                 "swing_weight": 0.15,
+                "fib_weight": 0.0,
                 "first_block_minutes": 15
               },
               "execution": {
                 "direction": "follow",
                 "decision": "ml_guard",
                 "entry_mode": "market_open",
+                "offset_points": 0.0,
                 "max_tick_age_ms": 1500,
                 "in_position_poll_ms": 20,
                 "idle_poll_ms": 100,
@@ -218,9 +230,9 @@
                 "comment": "koletivo-trader"
               }
             },
-            "score": 0.0,
+            "score": 1989.0,
             "leakage": {
-              "n_train": 40000,
+              "n_train": 14555,
               "n_test_original": 0,
               "n_removed": 0,
               "n_test_clean": 0,
@@ -235,23 +247,23 @@
             },
             "metrics": {
               "n_candles": 0,
-              "n_trades": 0,
-              "n_wins": 0,
-              "n_losses": 0,
-              "win_rate": 0.0,
-              "net_pnl": 0.0,
-              "final_bank": 500.0,
+              "n_trades": 1385,
+              "n_wins": 438,
+              "n_losses": 947,
+              "win_rate": 31.624548736462092,
+              "net_pnl": 1989.0,
+              "final_bank": 2489.0,
               "initial_bank": 500.0,
               "avg_win": 0,
               "avg_loss": 0,
               "median_win": 0,
               "median_loss": 0,
-              "avg_points_win": 200.0,
-              "avg_points_loss": 120.0,
-              "profit_factor": 1.0,
-              "max_drawdown": 0.0,
-              "max_drawdown_pct": 0.0,
-              "expectancy": 0.0,
+              "avg_points_win": 125.0,
+              "avg_points_loss": 40.0,
+              "profit_factor": 1.2333685322069694,
+              "max_drawdown": 315.0,
+              "max_drawdown_pct": 63.0,
+              "expectancy": 1.436101083032491,
               "trades_per_candle_pct": 0.0,
               "hourly": {},
               "equity": [],
@@ -259,7 +271,7 @@
             },
             "trades": [],
             "model_test": {
-              "test_direction_hit": 0.6202,
+              "test_direction_hit": 0.5961196787719423,
               "test_mae_close": 0
             }
           }
@@ -288,8 +300,8 @@
               },
               "risk": {
                 "mode": "fixed",
-                "stop_points": 120.0,
-                "gain_points": 200.0,
+                "stop_points": 60.0,
+                "gain_points": 130.0,
                 "rr_ratio": 2.0,
                 "atr_period": 14,
                 "trailing_enabled": true,
@@ -310,12 +322,14 @@
                 "gold_hours_only": true,
                 "min_hit_pct": 0.62,
                 "swing_weight": 0.15,
+                "fib_weight": 0.0,
                 "first_block_minutes": 15
               },
               "execution": {
                 "direction": "follow",
                 "decision": "ml_guard",
                 "entry_mode": "market_open",
+                "offset_points": 0.0,
                 "max_tick_age_ms": 1500,
                 "in_position_poll_ms": 20,
                 "idle_poll_ms": 100,
@@ -335,9 +349,9 @@
                 "comment": "koletivo-trader"
               }
             },
-            "score": 0.0,
+            "score": 1062.0,
             "leakage": {
-              "n_train": 40000,
+              "n_train": 14555,
               "n_test_original": 0,
               "n_removed": 0,
               "n_test_clean": 0,
@@ -352,23 +366,23 @@
             },
             "metrics": {
               "n_candles": 0,
-              "n_trades": 0,
-              "n_wins": 0,
-              "n_losses": 0,
-              "win_rate": 0.0,
-              "net_pnl": 0.0,
-              "final_bank": 1000.0,
+              "n_trades": 1336,
+              "n_wins": 485,
+              "n_losses": 851,
+              "win_rate": 36.30239520958084,
+              "net_pnl": 1062.0,
+              "final_bank": 2062.0,
               "initial_bank": 1000.0,
               "avg_win": 0,
               "avg_loss": 0,
               "median_win": 0,
               "median_loss": 0,
-              "avg_points_win": 200.0,
-              "avg_points_loss": 120.0,
-              "profit_factor": 1.0,
-              "max_drawdown": 0.0,
-              "max_drawdown_pct": 0.0,
-              "expectancy": 0.0,
+              "avg_points_win": 130.0,
+              "avg_points_loss": 60.0,
+              "profit_factor": 1.0959956612130526,
+              "max_drawdown": 366.0,
+              "max_drawdown_pct": 36.6,
+              "expectancy": 0.7949101796407185,
               "trades_per_candle_pct": 0.0,
               "hourly": {},
               "equity": [],
@@ -376,7 +390,7 @@
             },
             "trades": [],
             "model_test": {
-              "test_direction_hit": 0.6202,
+              "test_direction_hit": 0.5961196787719423,
               "test_mae_close": 0
             }
           }
@@ -405,8 +419,8 @@
               },
               "risk": {
                 "mode": "fixed",
-                "stop_points": 120.0,
-                "gain_points": 200.0,
+                "stop_points": 60.0,
+                "gain_points": 130.0,
                 "rr_ratio": 2.0,
                 "atr_period": 14,
                 "trailing_enabled": true,
@@ -427,12 +441,14 @@
                 "gold_hours_only": true,
                 "min_hit_pct": 0.62,
                 "swing_weight": 0.15,
+                "fib_weight": 0.0,
                 "first_block_minutes": 15
               },
               "execution": {
                 "direction": "follow",
                 "decision": "ml_guard",
                 "entry_mode": "market_open",
+                "offset_points": 0.0,
                 "max_tick_age_ms": 1500,
                 "in_position_poll_ms": 20,
                 "idle_poll_ms": 100,
@@ -452,9 +468,9 @@
                 "comment": "koletivo-trader"
               }
             },
-            "score": 0.0,
+            "score": 5310.0,
             "leakage": {
-              "n_train": 40000,
+              "n_train": 14555,
               "n_test_original": 0,
               "n_removed": 0,
               "n_test_clean": 0,
@@ -469,23 +485,23 @@
             },
             "metrics": {
               "n_candles": 0,
-              "n_trades": 0,
-              "n_wins": 0,
-              "n_losses": 0,
-              "win_rate": 0.0,
-              "net_pnl": 0.0,
-              "final_bank": 5000.0,
+              "n_trades": 1336,
+              "n_wins": 485,
+              "n_losses": 851,
+              "win_rate": 36.30239520958084,
+              "net_pnl": 5310.0,
+              "final_bank": 10310.0,
               "initial_bank": 5000.0,
               "avg_win": 0,
               "avg_loss": 0,
               "median_win": 0,
               "median_loss": 0,
-              "avg_points_win": 200.0,
-              "avg_points_loss": 120.0,
-              "profit_factor": 1.0,
-              "max_drawdown": 0.0,
-              "max_drawdown_pct": 0.0,
-              "expectancy": 0.0,
+              "avg_points_win": 130.0,
+              "avg_points_loss": 60.0,
+              "profit_factor": 1.0959956612130526,
+              "max_drawdown": 1830.0,
+              "max_drawdown_pct": 36.6,
+              "expectancy": 3.9745508982035926,
               "trades_per_candle_pct": 0.0,
               "hourly": {},
               "equity": [],
@@ -493,7 +509,7 @@
             },
             "trades": [],
             "model_test": {
-              "test_direction_hit": 0.6202,
+              "test_direction_hit": 0.5961196787719423,
               "test_mae_close": 0
             }
           }

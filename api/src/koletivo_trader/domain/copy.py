@@ -18,9 +18,11 @@ def phrase_for(
     reason: str = "",
     day_type: DayType | None = None,
     swing_signal: Side | None = None,
+    predicted_chart: ChartType | None = None,
 ) -> str:
     chart_pt = CHART_TYPE_PT[chart]
     pct = f"{hit_pct * 100:.0f}%"
+    future_pt = CHART_TYPE_PT.get(predicted_chart, "") if predicted_chart else ""
     if reason == "swing_discord":
         swing_pt = SIDE_PT.get(swing_signal or Side.HOLD, "o contexto de D-1")
         day_pt = DAY_TYPE_PT.get(day_type or DayType.NORMAL, "o tipo de dia previsto")
@@ -41,17 +43,23 @@ def phrase_for(
             f"{chart_pt.capitalize()} em desacordo com {day_pt}. "
             f"A chance de gain cai para {pct} — melhor não comprar nem vender."
         )
+    if reason == "swing_drag":
+        return (
+            f"{chart_pt.capitalize()}; o daytrade segue, mas o swing de D-1 reduz a confiança para {pct}."
+        )
     if reason == "low_hit":
         return (
             f"{chart_pt.capitalize()}; a probabilidade de atingir o gain antes do stop é {pct}, "
             "baixa nos dois lados — melhor não comprar nem vender."
         )
     if side is Side.HOLD:
+        extra = f" Recorte dos próximos 15 min tende a {future_pt}." if future_pt else ""
         return (
             f"{chart_pt.capitalize()}; a chance de gain é baixa nos dois lados ({pct}) — "
-            "melhor não comprar nem vender."
+            f"melhor não comprar nem vender.{extra}"
         )
     verb = "compra" if side is Side.BUY else "venda"
+    extra = f" Próximos 15 min: {future_pt}." if future_pt else ""
     return (
-        f"{chart_pt.capitalize()}; probabilidade de atingir o gain de {verb} antes do stop: {pct}."
+        f"{chart_pt.capitalize()}; probabilidade de atingir o gain de {verb} antes do stop: {pct}.{extra}"
     )

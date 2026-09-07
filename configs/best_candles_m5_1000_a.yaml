@@ -35,9 +35,11 @@ filters:
   gold_hours_only: true
   min_hit_pct: 0.62
   swing_weight: 0.15
+  fib_weight: 0.0
   first_block_minutes: 15
 execution:
   entry_mode: market_open
+  offset_points: 0.0
   max_tick_age_ms: 1500
   in_position_poll_ms: 20
   idle_poll_ms: 100

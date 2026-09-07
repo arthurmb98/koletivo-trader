@@ -19,6 +19,7 @@ ORDER_FIELDS = [
     "bar_id",
     "side",
     "chart_type",
+    "predicted_chart_type",
     "hit_pct",
     "phrase",
     "entry",
@@ -108,6 +109,9 @@ class CsvJournal:
                 "bar_id": bar_id,
                 "side": signal.side.value,
                 "chart_type": signal.chart_type.value,
+                "predicted_chart_type": ""
+                if signal.predicted_chart_type is None
+                else signal.predicted_chart_type.value,
                 "hit_pct": f"{signal.hit_pct:.4f}",
                 "phrase": signal.phrase,
                 "entry": signal.entry,

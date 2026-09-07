@@ -48,3 +48,32 @@ def test_windows_do_not_put_future_m5_into_x() -> None:
     assert window[-1].timestamp < future[0].timestamp
     assert entry.timestamp == future[0].timestamp
     assert all(c.timestamp not in {b.timestamp for b in future} for c in window)
+
+
+def test_same_day_m1_is_future_only() -> None:
+    from koletivo_trader.ml.labels import same_day_m1
+
+    t0 = datetime(2026, 3, 13, 9, 0)
+    m1 = [_c(t0 + timedelta(minutes=i), 100 + i, 101 + i, 99 + i, 100 + i) for i in range(40)]
+    start = t0 + timedelta(minutes=20)
+    path = same_day_m1(m1, start, n=15)
+    assert path[0].timestamp == start
+    assert all(c.timestamp >= start for c in path)
+    assert len(path) == 15
+
+
+def test_daytrade_features_use_blocks_and_volume() -> None:
+    import numpy as np
+
+    from koletivo_trader.ml.features import BLOCK_OHLC_VOL_DIM, VOL_SIG_DIM, daytrade_features, m1_block_vectors
+
+    t0 = datetime(2026, 3, 13, 9, 0)
+    window = [
+        Candle("WIN$", t0 + timedelta(minutes=i), 100 + i, 102 + i, 99 + i, 101 + i, 1000 + i * 80)
+        for i in range(15)
+    ]
+    blocks = m1_block_vectors(window)
+    assert blocks.shape == (BLOCK_OHLC_VOL_DIM,)
+    feats = daytrade_features(window)
+    assert feats.shape[0] > BLOCK_OHLC_VOL_DIM + VOL_SIG_DIM
+    assert not np.isnan(feats).any()

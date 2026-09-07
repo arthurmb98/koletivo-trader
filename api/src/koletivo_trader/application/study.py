@@ -32,10 +32,14 @@ def _print_result(tag: str, result: ParamResult) -> None:
 
 
 def _objective_key(val: ParamResult, test: ParamResult | None = None) -> tuple:
-    test_pnl = test.net_pnl if test is not None else -1e12
-    test_ok = 1 if test is not None and test.net_pnl > 0 and test.n_trades >= 20 else 0
-    val_ok = 1 if val.net_pnl > 0 and val.n_trades >= 15 else 0
-    return (test_ok, test_pnl, val_ok, val.net_pnl, -val.max_dd)
+    del test
+    return (
+        1 if val.net_pnl > 0 and val.n_trades >= 15 else 0,
+        val.net_pnl,
+        val.win_rate,
+        -val.max_dd,
+        val.n_trades,
+    )
 
 
 def train_models(*, max_daytrade_samples: int | None = None) -> dict:
@@ -51,7 +55,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
     print(f"Fit até {VAL_CUTOFF}: M1={len(m1_fit)} M5={len(m5_fit)} | val M1={len(m1_val)} M5={len(m5_val)}")
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    recipes = list(RECIPES)
+    recipes = [item for item in RECIPES if item.name in {"ft_atr_gold", "momentum_meta", "unique_adapt"}]
     extra = [
         DaytradeRecipe("ft_pts25_rr2", "first_touch_pts", delta_pts=25.0, stop_mult=0.8, gain_mult=1.6, min_score=0.38),
         DaytradeRecipe("mom_loose", "momentum_meta", stop_mult=1.2, gain_mult=2.2, min_score=0.42, momentum_cut=0.12),
@@ -87,21 +91,18 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
             model,
             swing_fit,
             banks=(1000.0,),
-            n_trials=22,
+            n_trials=12,
             prepared=prepared_val,
         )
         val_res = winners_val["1000"]
-        prepared_test = prepare_eval(m1_test, m5_test, group_days(m5_train), cfg, model, swing_fit)
-        test_res = score_fixed(prepared_test, cfg, val_res, 1000.0)
         _print_result("VAL 1000", val_res)
-        _print_result("TEST 1000", test_res)
-        ranked.append((recipe, model, scores, val_res, test_res))
-        if test_res.net_pnl > 0 and val_res.net_pnl > 0 and test_res.n_trades >= 25:
-            print("  receita lucrativa em val e teste — priorizando.")
+        ranked.append((recipe, model, scores, val_res, val_res))
+        if val_res.net_pnl > 0 and val_res.n_trades >= 25 and val_res.win_rate >= 38:
+            print("  receita estável na validação — segue para o retreino.")
             break
 
-    if not any(_objective_key(v, t)[0] == 1 for _, _, _, v, t in ranked):
-        print("\nNenhuma receita ainda lucrativa OOS. Tentando extras…")
+    if not any(_objective_key(v)[0] == 1 for _, _, _, v, _t in ranked):
+        print("\nNenhuma receita ainda lucrativa na validação. Tentando extras…")
         for recipe in extra:
             print(f"\n=== Receita extra {recipe.name} ({recipe.mode}) ===")
             model = DaytradeModel(recipe=recipe)
@@ -125,23 +126,20 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
                 model,
                 swing_fit,
                 banks=(1000.0,),
-                n_trials=22,
+                n_trials=12,
                 prepared=prepared_val,
             )
             val_res = winners_val["1000"]
-            prepared_test = prepare_eval(m1_test, m5_test, group_days(m5_train), cfg, model, swing_fit)
-            test_res = score_fixed(prepared_test, cfg, val_res, 1000.0)
             _print_result("VAL 1000", val_res)
-            _print_result("TEST 1000", test_res)
-            ranked.append((recipe, model, scores, val_res, test_res))
-            if test_res.net_pnl > 0 and val_res.net_pnl > 0 and test_res.n_trades >= 20:
+            ranked.append((recipe, model, scores, val_res, val_res))
+            if val_res.net_pnl > 0 and val_res.n_trades >= 20:
                 break
 
     if not ranked:
         raise RuntimeError("Nenhuma receita de daytrade treinou.")
-    ranked.sort(key=lambda row: _objective_key(row[3], row[4]), reverse=True)
-    best_recipe, _, day_scores, val_res, test_res = ranked[0]
-    print(f"\n>>> Vencedora: {best_recipe.name} val_pnl={val_res.net_pnl:.0f} test_pnl={test_res.net_pnl:.0f}")
+    ranked.sort(key=lambda row: _objective_key(row[3]), reverse=True)
+    best_recipe, _, day_scores, val_res, _ = ranked[0]
+    print(f"\n>>> Vencedora (só validação): {best_recipe.name} val_pnl={val_res.net_pnl:.0f}")
 
     print("\nRetreinando swing + daytrade no treino completo…")
     swing = SwingModel()
@@ -158,7 +156,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
     joblib.dump(daytrade, RESULTS_DIR / "model_daytrade.joblib")
     joblib.dump(swing, RESULTS_DIR / "model_swing.joblib")
 
-    print("Optuna final na validação 2024 H2…")
+    print("AG final na validação 2024 H2 (folds + confirm, sem teste)…")
     prepared_val = prepare_eval(m1_val, m5_val, group_days(m5_fit), cfg, daytrade, swing)
     winners = search_parameters(
         m1_val,
@@ -167,7 +165,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         cfg,
         daytrade,
         swing,
-        n_trials=40,
+        n_trials=28,
         prepared=prepared_val,
     )
     prepared_test = prepare_eval(m1_test, m5_test, group_days(m5_train), cfg, daytrade, swing)
@@ -176,16 +174,17 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         oos[bank] = score_fixed(prepared_test, cfg, result, float(bank))
         _print_result(f"OOS {bank}", oos[bank])
 
-    if oos["1000"].net_pnl <= 0:
-        print("OOS 1000 ainda negativo — varrendo limiar na validação…")
+    if winners["1000"].net_pnl <= 0:
+        print("Validação 1000 ainda negativa — varrendo limiar só na val…")
         base = winners["1000"]
-        best_pair = (base, oos["1000"])
-        for min_hit in (0.20, 0.24, 0.28, 0.32, 0.36, 0.40, 0.44):
+        best_val = base
+        for min_hit in (0.28, 0.32, 0.36, 0.40, 0.44, 0.50, 0.56):
             cand = ParamResult(
                 base.stop_points,
                 base.gain_points,
                 min_hit,
                 base.swing_weight,
+                base.fib_weight,
                 base.bank,
                 base.contracts,
                 0,
@@ -195,13 +194,11 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
                 0.0,
             )
             val_c = score_fixed(prepared_val, cfg, cand, 1000.0)
-            test_c = score_fixed(prepared_test, cfg, cand, 1000.0)
             _print_result(f"  min_hit={min_hit:.2f} VAL", val_c)
-            _print_result(f"  min_hit={min_hit:.2f} TEST", test_c)
-            if _objective_key(val_c, test_c) > _objective_key(best_pair[0], best_pair[1]):
-                best_pair = (val_c, test_c)
-        winners["1000"] = best_pair[0]
-        oos["1000"] = best_pair[1]
+            if _objective_key(val_c) > _objective_key(best_val):
+                best_val = val_c
+        winners["1000"] = best_val
+        oos["1000"] = score_fixed(prepared_test, cfg, best_val, 1000.0)
         for bank in ("500", "5000"):
             if bank in winners:
                 adj = winners[bank]
@@ -210,6 +207,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
                     winners["1000"].gain_points,
                     winners["1000"].min_hit_pct,
                     winners["1000"].swing_weight,
+                    winners["1000"].fib_weight,
                     adj.bank,
                     adj.contracts,
                     0,
@@ -221,16 +219,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
                 winners[bank] = score_fixed(prepared_val, cfg, cand, float(bank))
                 oos[bank] = score_fixed(prepared_test, cfg, cand, float(bank))
 
-    reported = {k: oos[k] for k in winners}
-    joblib.dump(
-        {
-            "params": {k: v.to_dict() for k, v in reported.items()},
-            "val": {k: v.to_dict() for k, v in winners.items()},
-            "recipe": best_recipe.to_dict(),
-        },
-        RESULTS_DIR / "model_params.joblib",
-    )
-    for bank, result in reported.items():
+    for bank, result in winners.items():
         path = CONFIGS_DIR / f"best_bank_{bank}.yaml"
         data = deepcopy(cfg.to_dict())
         data["name"] = f"best_bank_{bank}"
@@ -240,8 +229,18 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         data["risk"]["gain_points"] = result.gain_points
         data["filters"]["min_hit_pct"] = result.min_hit_pct
         data["filters"]["swing_weight"] = result.swing_weight
+        data["filters"]["fib_weight"] = result.fib_weight
+        data["execution"]["offset_points"] = result.offset_points
         path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    study = _build_study(cfg, day_scores, swing_scores, reported, best_recipe, ranked)
+    joblib.dump(
+        {
+            "params": {k: v.to_dict() for k, v in winners.items()},
+            "oos": {k: v.to_dict() for k, v in oos.items()},
+            "recipe": best_recipe.to_dict(),
+        },
+        RESULTS_DIR / "model_params.joblib",
+    )
+    study = _build_study(cfg, day_scores, swing_scores, oos, best_recipe, ranked)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = RESULTS_DIR / "studies.json"
     out.write_text(json.dumps(study, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -251,11 +250,11 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         "daytrade": day_scores,
         "swing": swing_scores,
         "recipe": best_recipe.to_dict(),
-        "params": {k: v.to_dict() for k, v in reported.items()},
-        "val_params": {k: v.to_dict() for k, v in winners.items()},
+        "params": {k: v.to_dict() for k, v in winners.items()},
+        "oos": {k: v.to_dict() for k, v in oos.items()},
         "screen": [
-            {"recipe": r.name, "val_pnl": v.net_pnl, "test_pnl": t.net_pnl, "test_trades": t.n_trades, "test_wr": t.win_rate}
-            for r, _, _, v, t in ranked
+            {"recipe": r.name, "val_pnl": v.net_pnl, "val_trades": v.n_trades, "val_wr": v.win_rate}
+            for r, _, _, v, _t in ranked
         ],
     }
 
@@ -345,8 +344,8 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
         "disclaimer": "Não é recomendação de investimento. Resultado passado não garante resultado futuro.",
         "how_it_works": [
             "O swing lê o pregão anterior (M5) e classifica o tipo de dia.",
-            "O daytrade lê 15 candles de 1 min e decide compra, venda ou não fazer nada para os próximos 15 min.",
-            "Ordem armada sai a mercado com stop e gain já definidos. Perto do alvo o stop sobe para travar lucro.",
+            "O daytrade lê 15 M1 em 3 blocos de 5 min (preço + volume) e decide compra, venda ou não fazer nada.",
+            "Swing e Fibonacci entram na fusão só se o peso for maior que zero. Ordem armada sai com stop e gain.",
         ],
         "insights": {
             "worked": [
@@ -354,7 +353,7 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
                 "Meta-label P(gain) filtra operações; rótulo first-touch evita colapso em HOLD.",
             ],
             "failed": ["Acerto direcional puro de regressão linear no trader-api era ~49%."],
-            "improve": ["Recalibrar parâmetros por banca com a busca Optuna na validação 2024 H2."],
+            "improve": ["Recalibrar parâmetros por banca com o algoritmo genético na validação 2024 H2."],
             "recipe_screen": screen,
         },
         "parecer": {

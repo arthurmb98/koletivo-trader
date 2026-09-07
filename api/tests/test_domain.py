@@ -40,7 +40,37 @@ def test_hold_phrase_mentions_not_trading() -> None:
     assert "41%" in text
 
 
+def test_swing_discord_scales_by_weight_not_veto() -> None:
+    day = Signal(
+        side=Side.BUY,
+        entry=1000,
+        stop=900,
+        take=1200,
+        chart_type=ChartType.IMPULSE_UP,
+        hit_pct=0.96,
+        phrase="x",
+        reason="daytrade",
+    )
+    ctx = SessionContext(
+        as_of=datetime(2026, 3, 12, 17, 0),
+        previous_date="2026-03-12",
+        swing_signal=Side.SELL,
+        day_type=DayType.TREND_DOWN,
+        predicted_day_type=DayType.TREND_DOWN,
+        swing_hit_pct=0.80,
+        phrase="queda",
+    )
+    fused = fuse_signals(day, ctx, swing_weight=0.20, min_hit_pct=0.62, minutes_from_open=5)
+    assert fused.side is Side.BUY
+    assert abs(fused.hit_pct - 0.80) < 1e-9
+
+
 def test_first_block_requires_swing_agreement() -> None:
+    """Legacy name: disagreement no longer vetoes; it only drags hit by weight."""
+    test_swing_discord_scales_by_weight_not_veto()
+
+
+def test_swing_weight_zero_leaves_daytrade_hit() -> None:
     day = Signal(
         side=Side.BUY,
         entry=1000,
@@ -50,6 +80,7 @@ def test_first_block_requires_swing_agreement() -> None:
         hit_pct=0.8,
         phrase="x",
         reason="daytrade",
+        predicted_chart_type=ChartType.BREAKOUT,
     )
     ctx = SessionContext(
         as_of=datetime(2026, 3, 12, 17, 0),
@@ -60,11 +91,59 @@ def test_first_block_requires_swing_agreement() -> None:
         swing_hit_pct=0.7,
         phrase="queda",
     )
-    fused = fuse_signals(day, ctx, swing_weight=0.15, min_hit_pct=0.62, minutes_from_open=5)
-    assert fused.side is Side.HOLD
-    assert fused.reason == "swing_discord"
-    assert fused.chart_type is ChartType.IMPULSE_UP
-    assert "nenhuma ordem" in fused.phrase.lower() or "não" in fused.phrase.lower()
+    fused = fuse_signals(day, ctx, swing_weight=0.0, min_hit_pct=0.62, minutes_from_open=5)
+    assert fused.side is Side.BUY
+    assert abs(fused.hit_pct - 0.8) < 1e-9
+    assert fused.predicted_chart_type is ChartType.BREAKOUT
+
+
+def test_clamp_decider_weights_caps_aux_at_40pct() -> None:
+    from koletivo_trader.domain.fibonacci import clamp_decider_weights
+
+    day, swing, fib = clamp_decider_weights(0.3, 0.3)
+    assert abs(day + swing + fib - 1.0) < 1e-9
+    assert swing + fib <= 0.4 + 1e-9
+    assert day >= 0.6 - 1e-9
+    day0, swing0, fib0 = clamp_decider_weights(0.0, 0.0)
+    assert swing0 == 0.0 and fib0 == 0.0 and abs(day0 - 1.0) < 1e-9
+
+
+def test_fib_boost_higher_near_support_in_uptrend() -> None:
+    from koletivo_trader.domain.fibonacci import fib_boost
+
+    start = datetime(2026, 3, 13, 9, 15)
+    candles = [_bar(i, 1000 + i * 10, 1008 + i * 10, 998 + i * 10, 1006 + i * 10, start) for i in range(12)]
+    lo = min(c.low for c in candles)
+    hi = max(c.high for c in candles)
+    mid = hi - 0.5 * (hi - lo)
+    near = fib_boost(Side.BUY, mid, candles, tick=5)
+    far = fib_boost(Side.BUY, hi + 200, candles, tick=5)
+    assert near > far
+    assert fib_boost(Side.HOLD, mid, candles) == 0.0
+
+
+def test_fib_discord_scales_by_weight() -> None:
+    day = Signal(
+        side=Side.BUY,
+        entry=1000,
+        stop=900,
+        take=1200,
+        chart_type=ChartType.IMPULSE_UP,
+        hit_pct=0.96,
+        phrase="x",
+        reason="daytrade",
+    )
+    fused = fuse_signals(
+        day,
+        None,
+        swing_weight=0.0,
+        min_hit_pct=0.62,
+        minutes_from_open=30,
+        fib_weight=0.2,
+        fib_boost=-0.80,
+    )
+    assert fused.side is Side.BUY
+    assert abs(fused.hit_pct - 0.80) < 1e-9
 
 
 def test_near_gain_pulls_stop_into_profit() -> None:
@@ -87,3 +166,13 @@ def test_near_gain_pulls_stop_into_profit() -> None:
     )
     assert stop > 1000
     assert stop < 1180
+
+
+def test_genetic_repair_keeps_daytrade_majority_and_rr() -> None:
+    from koletivo_trader.ml.genetics import repair_genome, unpack
+
+    g = repair_genome([100.0, 120.0, 0.5, 0.3, 0.3, 7.0])
+    p = unpack(g)
+    assert p["swing_weight"] + p["fib_weight"] <= 0.4 + 1e-9
+    assert p["gain"] >= p["stop"] * 1.5 - 1e-9
+    assert p["offset_points"] % 5 == 0

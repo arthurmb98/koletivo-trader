@@ -1,59 +1,75 @@
-# Machine learning — desenho, falhas e próximos passos
+# Machine learning e busca de parâmetros
 
-O produto está em [plano.md](plano.md). Esta nota cobre tensor de treino, pesos da fusão, o que já falhou e o backtest honesto.
+O produto está em [plano.md](plano.md). Esta nota cobre o tensor de treino, a fusão, o AG e o que já falhou.
 
-## Objetivo
+## Papéis
 
-Daytrade com P(gain) calibrada no horário de ouro, custo `point_value=0.20` + `contract_cost=1`, máx. 8 trades/dia. Teste 2025–2026. Optuna só na val 2024 H2 (`2024-07-01`+ no CSV de treino).
+| Peça | Função | Retreina a cada geração do AG? |
+| --- | --- | --- |
+| Daytrade (HGB two-stage) | Padrão dos 15 M1 + P(gain) | Não — labels usam ATR, não o stop/gain do YAML |
+| Swing (HGB) | Tipo de dia D-1 e viés | Não a cada geração; treina uma vez com semente 100/200 |
+| AG (`ml/genetics.py`) | stop, gain, `min_hit`, pesos, offset | Não é ML de gráfico; avalia backtest no sinal já previsto |
+| MLP do AG | Surrogate para ranquear genomas | Só acelera o AG; **não** entra no robô ao vivo |
 
-O **daytrade é o decisor principal** (≥ 60% da fusão). Swing e Fibonacci são opcionais por peso, inclusive **zero**.
+Se no futuro um gene passar a rotular o Y do HGB, aí sim aquela cabeça seria retreinada. Hoje nenhum gene do AG entra no `DaytradeModel.fit`.
 
-## Três entradas do daytrade
+## Objetivo do daytrade
 
-15 M1 = 3 blocos de 5 minutos. Cada bloco: 5 vetores `(t, O, H, L, C)` + 5 volumes no mesmo `t` → 20 OHLC + 5 vol.
+P(gain) no horário de ouro, custo `point_value=0.20` + `contract_cost=1`, máx. 8 trades/dia. Teste 2025–2026 só para métrica OOS.
 
-1. **X preço** — 3 blocos, normalizados por ATR (sem índice absoluto).
-2. **X volume** — 15 volumes crus +:
-   - confirmação (preço e volume sobem)
-   - exaustão (preço sobe, volume cai)
-   - rompimento com RVOL ≥ 1,5× média 20
-   - falso rompimento (rompe com RVOL baixo)
-   - absorção (volume alto, range pequeno)
-   - acumulação/distribuição (up-volume vs down-volume)
-   - liquidez (z-score)
-3. **Futuro só no treino** — 3 M5 (15 M1) para Y. Inferência nunca vê isso.
+## Três entradas
 
-Pré-rótulo: `classify_chart` nos 15 M1 passados → feature one-hot; nos 15 M1 futuros → **alvo** `chart_type_future`. Swing: `classify_day` no D-1 (feature) e no D (alvo de `predicted_day_type`).
+15 M1 = 3 blocos de 5 minutos. Cada bloco: 20 OHLC ATR-normalizados + 5 volumes.
 
-## Saídas
+1. **X preço** — treino e inferência.
+2. **X volume** — confirmação, exaustão, RVOL ≥ 1,5, falso rompimento, absorção, A/D, z-score de liquidez.
+3. **Futuro só no treino** — 15 M1 seguintes para Y (caminho de gain e `chart_type_future`). Inferência nunca vê isso.
 
-- Direção / HOLD: two-stage (BUY vs SELL limpo + meta P(gain)). Não voltar a 3 classes com HOLD majoritário.
-- `chart_type_past` (rótulo do X) e `predicted_chart_type` (cabeça supervisionada no Y futuro).
-- `hit_pct` = P(gain) do meta, depois da fusão ponderada.
+Pré-rótulo: `classify_chart` no passado (feature) e no futuro (alvo). Swing: `classify_day` no D-1 (feature) e no D (alvo).
 
-## Fusão e Optuna (pesos)
+## Saídas do daytrade
+
+- Two-stage BUY vs SELL + meta P(gain). Não voltar a 3 classes com HOLD majoritário.
+- `chart_type` (passado) e `predicted_chart_type` (cabeça no Y futuro).
+- `hit_pct` = P(gain) do meta, **depois** da fusão.
+
+## Fusão
 
 ```
-w_swing, w_fib ∈ [0, 0.4]
-w_swing + w_fib ≤ 0.4
-w_day = 1 - w_swing - w_fib   # ≥ 0.6
-hit_final = w_day * hit_day + w_swing * boost_swing + w_fib * boost_fib
+hit_final = hit_day + w_swing * signed_swing + w_fib * signed_fib
 ```
 
-- Peso 0: o decisor não altera `hit_final` nem veta (primeiros 15 min sem swing se `w_swing = 0`).
-- Optuna sugere `swing_weight` e `fib_weight` com a restrição da soma (ex.: amostrar `w_swing`, depois `w_fib` em `[0, 0.4 - w_swing]`). Pode descobrir que **só daytrade** (`0, 0`) ganha, ou que um pouco de swing/Fib sobe o acerto.
-- Não gerar `model_params.joblib` como “modelo”; persistir só `configs/best_bank_{500,1000,5000}.yaml`.
-- Também: stop, gain (RR ≥ 1,5), `min_hit_pct`.
+`w_swing + w_fib ≤ 0,4`. Peso 0 zera aquele termo. Discordância reduz o hit na proporção do peso; não veta o lado. HOLD só se `hit_final < min_hit_pct`.
 
-Fibonacci: confluência 38,2/50/61,8 na perna da sessão; `boost_fib` alto se o preço está no nível a favor do lado do daytrade, baixo se está longe ou contra. Distância em ticks de 5 pts.
+Exemplo: 96% daytrade, swing 80% no lado oposto, peso 0,2 → 80%.
 
-## Pipeline atual no código (a substituir)
+Fibonacci assinado: proximidade aos 38,2/50/61,8, sinal + se alinhado ao daytrade, − se contra.
 
-Arquivos: `ml/{labels,features,models,parameters}.py`, `application/study.py`.
+## Offset
 
-Hoje: `window_vector` 15×OHLC plano; volume só `vol_z` + VWAP; sem Fib; `swing_weight` clampado para longe de 0 (`max(0.001, …)` em `fusion.py` — **bug relativo ao desenho novo**); Optuna não busca `fib_weight`; `ml.lookback` no YAML não é lido (15/3 hardcoded).
+`entry = round_tick(close + offset_points)`. O AG varre offset em passos de 5 pts, inclusive 0 e negativos. Stop/gain a partir dessa entrada.
 
-`predict` devolve só chart **passado**.
+## Algoritmo genético
+
+Não é Optuna. Não é uma terceira ML de sinal.
+
+- Representação real: `[stop, gain, min_hit, swing_w, fib_w, offset]`
+- Reparo: tick 5, `gain ≥ 1,5 × stop`, `swing_w + fib_w ≤ 0,4`
+- SBX (η=15), mutação polinomial (η=20), torneio k=3, elitismo, imigração ~15%
+- População ~24, ≤16 gerações, early-stop se a elite não sobe
+- Fitness: mediana de 3 folds purged na val 2024 H2, penaliza DD > 28% da banca e WR abaixo do breakeven com custo
+- Surrogate: `MLPRegressor(32, 16)` treinado nos genomas já avaliados; só sugere infill
+
+`python -m koletivo_trader train` treina swing+daytrade e em seguida o AG; escreve `configs/best_bank_*.yaml`.
+
+## Backtest honesto
+
+1. Caminho **M1**, mesmo dia, até SL/TP ou fim da sessão.
+2. Stop no mesmo M1 continua conservador (stop ganha se os dois tocam).
+3. Trailing só com `mark=close` **depois** do bar — nunca high/low do bar (isso inflou WR para ~78% com BE falso).
+4. Cooldown até o timestamp de saída + teto 8/dia.
+5. PnL = pontos × 0,20 × contratos − 1 × contratos.
+6. Hiperparâmetros **nunca** no teste 2025+.
 
 ## O que já quebrou (não repetir)
 
@@ -61,30 +77,18 @@ Hoje: `window_vector` 15×OHLC plano; volume só `vol_z` + VWAP; sem Fib; `swing
 
 **3 M5 com stop-no-mesmo-bar.** No WIN o M5 cobre stop e gain; WR ~23% vs BE ~37%. Ao vivo o hold é até SL/TP em ticks.
 
-Simular caminho **M1** até barreira ou fim do dia. Stop no mesmo M1 continua conservador **antes** de atualizar trailing. Trailing só com `mark=close` depois do bar — nunca high/low do bar em avaliação (isso inflou WR para ~78% com BE falso).
+**Média ponderada que diluía o daytrade.** `w_day * hit + w * boost` + veto nos primeiros 15 min. Substituída pela fórmula aditiva acima.
 
-**Meta sem ranqueamento.** HGB nas features velhas: P(gain|acerto) ≈ P(gain|erro). Bolsões na cauda (ex. 80/160, p≥0,337, n=264, +R$600 no teste) são frágeis.
+**Meta sem ranqueamento.** HGB nas features velhas: P(gain\|acerto) ≈ P(gain\|erro). Bolsões na cauda são frágeis.
 
-**Optuna no teste.** Busca só na val 2024 H2. Publicar métrica OOS.
+**Optuna no teste.** A busca (agora AG) só na val 2024 H2.
 
-`CalibratedClassifierCV(cv="prefit")` quebra no sklearn atual.
-
-## Regras de backtest
-
-1. Caminho M1, mesmo dia, até SL/TP ou fim da sessão.
-2. Cooldown até o timestamp de saída + teto 8/dia.
-3. PnL = pontos × 0,20 × contratos − 1 × contratos.
-4. Não escolher hiperparâmetros no teste.
+`CalibratedClassifierCV(cv="prefit")` quebra no sklearn atual — o fit ignora se falhar.
 
 ## Artefatos
 
-`studies/results/model_{daytrade,swing}.joblib` — regenerar no próximo `train`. YAML de banca hoje **não** é OOS validado.
+- `studies/results/model_daytrade.joblib`, `model_swing.joblib`
+- `configs/best_bank_{500,1000,5000}.yaml` — stop, gain, min_hit, pesos, offset
+- `ui/public/studies.json` — página de estudo
 
-## Próximo trabalho
-
-1. Features em blocos 5×M1 + volume signatures; `Signal.predicted_chart_type`.
-2. `fibonacci.py` + fusão com `w_day/w_swing/w_fib` e clamp `w_swing + w_fib ≤ 0.4` (permitir 0).
-3. Labels de gain no caminho M1; cabeça `chart_type_future`.
-4. Testes: leakage, pesos 0, soma > 0,4 rejeitada, Fib.
-5. `python -m koletivo_trader train`; Optuna grava só YAML.
-6. UI: tipo previsto 15 min; pytest; `serve` + front local.
+Não há `model_params` como “terceiro cérebro”. O joblib de params, se existir, é só metadado da última busca.
