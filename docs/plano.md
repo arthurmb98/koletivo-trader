@@ -1,33 +1,32 @@
 # Koletivo Trader — plano e arquitetura
 
-Remake do `trader-api` em Clean Architecture: `ui/` (clone visual Koletivo) + `api/` (3 MLs, orquestrador, MT5) + `datasets/` WIN$. O card de sinal **sempre** mostra tipo de gráfico, % de acerto prevista e uma frase — inclusive em “não fazer nada”.
+Remake do `trader-api` em Clean Architecture: `ui/` (clone visual Koletivo) + `api/` (3 MLs, orquestrador, MT5) + `datasets/` WIN$. O card de sinal **sempre** mostra tipo de gráfico (passado e previsto nos próximos 15 min), % de acerto e uma frase — inclusive em “não fazer nada”.
 
 Não é recomendação de investimento. Resultado passado não garante resultado futuro.
 
 ## Origem e marca
 
 - Workspace: `C:\src\koletivo-trader`
-- Fonte: `C:\src\trader-api` (remoto `arthurmb98/trader-api`, branch `staging`)
-- Setup de referência ao vivo no trader-api: `best_candles_m5_1000_a` (M5, banca 1000, stop 100 / gain 200, trailing 60/50, `ml_guard`, 1 mini)
-- **Koletivo Hub** não é pasta local: [koletivo-hub.vercel.app](https://koletivo-hub.vercel.app) do repo privado `arthurmb98/koletivo-web`. O trader reusa marca (Syne/Outfit, `#058ef2`) e o rodapé do estudo aponta para o hub; não há dependência de código.
-- GitHub: conta pessoal `arthurmb98`. Repo alvo público `arthurmb98/koletivo-trader`, branch `staging`, datasets commitados. `.env` e `journal/` fora do Git.
+- Fonte operacional: `C:\src\trader-api` (`arthurmb98/trader-api`, branch `staging`) — sessão WIN, `protect_levels`, config `best_candles_m5_1000_a` (M5, stop 100 / gain 200, trailing 60/50, ouro, 8 trades/dia). A ML deles (regressão linear ~48–49% de direção) **não** é o modelo daqui.
+- **Koletivo Hub**: [koletivo-hub.vercel.app](https://koletivo-hub.vercel.app) (`arthurmb98/koletivo-web`). Só marca (Syne/Outfit, `#058ef2`).
+- GitHub público: [arthurmb98/koletivo-trader](https://github.com/arthurmb98/koletivo-trader), branch **`staging`**. `.env` e `journal/` fora do Git.
 
 ## Layout
 
 ```
 koletivo-trader/
-  ui/                 # React 19 + Vite + Tailwind (clone visual do web/)
+  ui/                 # React 19 + Vite + Tailwind
   api/                # Python, domínio, ML, orquestrador, MT5, HTTP
   datasets/           # WIN$ M1 e M5
-  configs/            # YAML (bancas, stop/gain, pesos, sessão)
-  studies/            # artefatos de treino (joblib + JSON)
-  journal/            # diário operacional (CSV, 1 pasta por dia; fora do Git)
-  docs/               # este plano e notas de ML
+  configs/            # YAML (bancas, stop/gain, pesos)
+  studies/            # joblib + studies.json
+  journal/            # diário CSV (runtime, gitignored)
+  docs/               # este plano e ML
 ```
 
-A pasta `ui/` **não fica vazia**. Functions serverless em `api/functions/` são adaptadores finos; orquestrador e MT5 **sempre locais**.
+Orquestrador e MT5 **sempre locais**. `api/functions/` só proxy fino.
 
-## Arquitetura da API (hexagonal)
+## Arquitetura
 
 ```mermaid
 flowchart LR
@@ -40,11 +39,12 @@ flowchart LR
     Status[status]
     Arm[start stop]
   end
-  subgraph core [api domínio]
+  subgraph core [api dominio]
     Orch[Orchestrator]
     Swing[SwingContextModel]
     Day[DaytradeSignalModel]
-    Params[ParameterSearch]
+    Params[OptunaParams]
+    Fib[FibonacciFilter]
     Risk[RiskPolicy]
   end
   subgraph mt5 [Integrador MT5]
@@ -58,6 +58,7 @@ flowchart LR
   Live --> Arm
   Orch --> Swing
   Orch --> Day
+  Orch --> Fib
   Orch --> Risk
   Orch --> Orders
   Ticks --> Bars
@@ -65,164 +66,108 @@ flowchart LR
   Params --> Risk
 ```
 
-Camadas em `api/src/koletivo_trader/`:
+Camadas em `api/src/koletivo_trader/`: `domain`, `application`, `ml`, `adapters/mt5`, `adapters/http`, CSV/journal/YAML.
 
-| Camada | Papel |
-| --- | --- |
-| `domain` | `Candle`, `Side` (BUY/SELL/HOLD), `DayType`, `ChartType`, `Signal` (lado + tipo + hit_pct + phrase), `SessionContext`, risco e sessão |
-| `application` | `LiveEngine`, replay, `train_models` |
-| `ml` | swing, daytrade, busca Optuna |
-| `adapters/mt5` | único lugar que importa `MetaTrader5` |
-| `adapters/http` | FastAPI local; `api/functions/` só proxy |
-| `adapters` | CSV, journal, configs YAML |
+Testes pytest no domínio (sem leakage, fusão de pesos, Fib). Sem `order_send` em teste.
 
-Testes: pytest no domínio (rótulos sem vazamento de futuro), journal e fusão. Sem `order_send` em teste.
+## Tipos
 
-## Correções de mercado (vs. trader-api)
+**Dia (swing, D-1 e previsão de D):** `trend_up`, `trend_down`, `normal`, `normal_variation`, `neutral`, `non_trend`, `volatile`.
 
-O trader-api prevê o próximo OHLC com regressão linear em 1 candle e deriva compra/venda. Acerto direcional no estudo ~48–49%. A borda está em risco/filtros, não na direção. Isso **não** entrega probabilidade calibrada nem tipo de dia.
+**Gráfico curto (15×M1 ≈ 3×M5):** `impulse_up/down`, `pullback_up/down`, `consolidation`, `breakout`, `reversal`, `indecision`.
 
-Ajustes alinhados a Market Profile / auction market / price action:
+Pré-rótulo determinístico no treino: tipo do passado (feature) e tipo do futuro (alvo). Ao vivo o tipo futuro é **previsto**, nunca lido do preço que ainda não existe.
 
-- Regressão linear entra como **descritor de forma** (inclinação e R², normalizada por ATR), não como classificador único.
-- Classificador `HistGradientBoosting` para direção e tipos. A UI precisa de **% de acerto prevista**.
-- Features **normalizadas por range/ATR** (sem preço absoluto do WIN).
-- Rótulos usam o futuro **só no treino**. Inferência ao vivo nunca vê os 3 M5 seguintes.
-- Split: treino até 2024, teste a partir de 2025.
-- “ML auxiliar de parâmetros” = **Optuna/TPE** em stop, gain, piso de confiança e `swing_weight` — não uma rede extra.
+## Daytrade — 3 entradas
 
-Detalhes de rótulos, vieses de backtest e o que já falhou estão em [ml.md](ml.md).
+Os **15 M1** são 3 blocos de 5 minutos. Cada bloco:
 
-### Tipos de dia (swing, D-1 e previsão de D)
+- 5 vetores no tempo (`datetime`): abertura, máxima, mínima, fechamento → **20 valores**
+- 5 volumes no mesmo `datetime` → **5 volumes**
 
-- `trend_up` / `trend_down`
-- `normal`
-- `normal_variation`
-- `neutral`
-- `non_trend`
-- `volatile`
+| # | Entrada | Uso |
+| --- | --- | --- |
+| 1 | Preço passado (3×20 OHLC, normalizado por ATR) | Inferência e treino |
+| 2 | Volume passado (15 volumes + padrões) | Inferência e treino |
+| 3 | 3 M5 futuros (15 M1 equivalentes) | **Só treino** — rotular gain e `chart_type_future`. Proibido na inferência. |
 
-### Tipos de gráfico curto (15×M1 ≈ 3×M5)
+Padrões de volume (bar volume B3, não tape): confirmação, exaustão, rompimento com RVOL ≥ 1,5×, falso rompimento, absorção, acumulação/distribuição (up vs down volume), liquidez (z-score).
 
-- `impulse_up` / `impulse_down`
-- `pullback_up` / `pullback_down`
-- `consolidation`
-- `breakout`
-- `reversal`
-- `indecision`
+## Daytrade — saídas
 
-## Os 3 modelos
+- `side`: BUY / SELL / HOLD pela P(gain) na abertura do candle atual no caminho dos próximos 3 M5 (simulação em **M1**, ver [ml.md](ml.md))
+- `chart_type` / `chart_type_past`: tipo dos 15 M1 já fechados
+- `predicted_chart_type`: tipo previsto dos próximos 15 min
+- `hit_pct`, `phrase`
 
-### 1. Swing (não opera sozinho)
+A ordem **não** tem time-stop de 15 min: ao vivo segura até SL/TP. Os 3 M5 são cadência de **decisão**.
 
-Entrada: todos os M5 do **pregão anterior**.
+## Swing (contexto, peso pode ser zero)
 
-Saídas persistidas o dia inteiro (`SessionContext`):
+Entrada: M5 do pregão anterior. Saídas o dia inteiro: `swing_signal`, `day_type` (D-1), `predicted_day_type` (D), `swing_hit_pct`.
 
-- `swing_signal`: BUY | SELL | HOLD
-- `day_type` (D-1)
-- `predicted_day_type` (D)
-- `swing_hit_pct`
+Não opera sozinho. Com `swing_weight = 0` não entra na fusão nem no veto dos primeiros 15 min.
 
-### 2. Daytrade (crítico, tempo real)
+## Fibonacci (filtro, peso pode ser zero)
 
-Entrada viva: **15 candles M1** = 60 valores OHLC (+ features de estrutura e M5 anteriores já fechados). Objetivo: decisão para o **próximo bloco de 3 M5**, entrada na **abertura** do próximo M5.
+Confluência na perna de impulso da sessão: 38,2 / 50 / 61,8. BUY só perto de suporte Fib na direção do daytrade; SELL análogo. Tick WIN = 5 pts. **Não** substitui SL/TP da ordem.
 
-Saída viva: `side`, `chart_type`, `hit_pct`, `phrase`.
+Com `fib_weight = 0` não influencia.
 
-A ordem **não** tem time-stop de 15 minutos: ao vivo a posição fica até SL/TP, com trailing. O horizonte de 3 M5 é a **cadência de decisão**, não o tempo máximo de hold. Backtest que só olha 3 M5 subestima o sistema — ver [ml.md](ml.md).
+## Fusão: daytrade é o decisor principal
 
-### 3. Busca de parâmetros (auxiliar)
+Pesos no YAML (`filters`):
 
-Parte da melhor config do trader-api (`point_value=0.20`, `tick_size=5`, `contract_cost=1`, stop 100 / gain 200, trailing, ouro 09:15–11:00 e 14:30–17:00).
+- `swing_weight` ∈ **[0, 0.4]**
+- `fib_weight` ∈ **[0, 0.4]**
+- **`swing_weight + fib_weight ≤ 0.4`**
+- peso do daytrade = `1 - swing_weight - fib_weight` ≥ **0.6**
 
-Varre stop/gain, `min_hit_pct`, `swing_weight` ∈ (0, 1) começando em **0.15**.
+```
+hit_final = w_day * hit_day + w_swing * boost_swing + w_fib * boost_fib
+```
 
-Contratos:
+- `w_day + w_swing + w_fib = 1`
+- Peso **0** = aquele decisor some (o auxiliar pode escolher só daytrade).
+- Discordância de swing ou Fib **não** vira veto duro se o peso for 0; só reduz `hit_final` na proporção do peso (pode cair abaixo de `min_hit_pct` → HOLD).
+- Primeiros 15 min: exigência de concordância swing×daytrade **somente se** `swing_weight > 0`.
 
-- 500 → 1
-- 1000 → 1
-- +1 a cada R$ 1000, teto 10
+O modelo auxiliar (Optuna/TPE) varre esses pesos (incluindo 0) para ver se o sinal acerta melhor só com daytrade ou com um pouco de swing e/ou Fib. Só grava YAML em `configs/best_bank_*.yaml` — sem `.joblib` de parâmetros.
 
-Gera YAML por banca (`configs/best_bank_{500,1000,5000}.yaml`). O orquestrador carrega `best_bank_1000` se existir; senão `best_candles_m5_1000_a`.
+Também varre stop/gain e `min_hit_pct`. Bancas: 500→1 contrato, 1000→1, +1 a cada R$1000, teto 10. Orquestrador: `best_bank_1000` se existir.
 
 ## Orquestrador (Windows / MT5)
 
-Antes do ouro (ou ao armar):
-
-1. Integrador busca M5 de D-1 no MT5 (fallback: CSV).
-2. Swing grava `SessionContext`.
-3. Motor fica ARMADO até 09:15.
-
-Loop:
-
-- Decisão **só no fechamento de M5**. Ticks servem mark-to-market, trailing e rejeição de ordem velha.
-- **ARMADO** envia **ordem a mercado já com SL/TP**.
-- Em posição: poll de ticks **20 ms**; idle **100 ms**. `modify_sltp` só se o stop muda ≥1 tick e ≥**150 ms** desde o último modify.
-- Perto do alvo (`invalidate_tp_points`, 30 pts): puxa o stop para o lado positivo para um dunk ainda travar lucro.
-- Circuito: reconnect, heartbeat, recusa de conta real por padrão (`paper` / `mt5` demo); `prd` só explícito.
-- Ordens idempotentes (magic + comment + bar_id). Sem reenvio no mesmo M5.
-- Limites: `max_trades_per_day=8`, `daily_loss_points`.
-
-Fusão swing + daytrade:
-
-- **Primeiros 15 min**: só opera se daytrade e swing concordarem; senão HOLD.
-- **Depois**: `hit_final = (1 - w) * hit_day + w * boost`, `w = swing_weight`.
-  - Chart combina com `predicted_day_type` → boost.
-  - Discorda → penaliza; pode cair abaixo do piso → HOLD.
+1. M5 de D-1 → swing grava `SessionContext`.
+2. ARMADO até o ouro (09:15–11:00 e 14:30–17:00).
+3. Decisão no **fechamento de M5**; ordem a mercado **já com SL/TP**.
+4. Em posição: ticks 20 ms; idle 100 ms; modify SL se muda ≥1 tick e ≥150 ms.
+5. Perto do alvo (`invalidate_tp_points` 30 pts): stop para o lado positivo.
+6. Demo por padrão (`paper` / `mt5`); `prd` explícito. Idempotência por `bar_id`. Máx. 8 trades/dia.
 
 ## Card de sinal (UI)
 
-O snapshot HTTP e o card “Sinal atual” **sempre** mostram, mesmo em HOLD:
+Sempre, inclusive HOLD:
 
-- Lado: Compra / Venda / **Não fazer nada**
-- Tipo do gráfico (`chart_type` em PT)
-- % de acerto prevista (`hit_pct`)
-- Frase gerada no domínio (`phrase_for`), não string solta no React
+- Compra / Venda / **Não fazer nada**
+- Tipo do gráfico **passado** e tipo **previsto** (próximos 15 min), em PT
+- % de acerto (`hit_pct`)
+- Frase de domínio (`phrase_for`)
 
-Poll do front: **4 Hz (250 ms)** para sinal **e** gráfico de preço (último ponto = `quote.last`). Integrador continua em tick-rate.
+Poll **4 Hz (250 ms)** no sinal e no gráfico (último ponto = `quote.last`).
 
 ## Journal CSV
 
-`journal/AAAA-MM-DD/` (America/Sao_Paulo):
-
-| Arquivo | Quando |
-| --- | --- |
-| `orders.csv` | sempre (paper, demo, real), inclusive HOLD |
-| `trades.csv` | só `mt5`/`prd` com fill |
-| `ledger.csv` | só operação real |
-| `context.json` | SessionContext do swing |
-
-Replay **não** grava journal.
-
-Front em Ao vivo: default **hoje**; mínimo = primeiro dia real (`trades.csv` ou `ledger.csv`). Data antiga é estática; só o dia corrente faz poll 4 Hz.
-
-## Front
-
-Rotas:
-
-- `/` estudo (`ui/public/studies.json`)
-- `/replay` CSV histórico, sem ordem e sem journal
-- `/ao-vivo` arma MT5 local; default hoje
-
-Comunicação: GET status 4 Hz + POST start/stop + GET journal. Sem WebSocket.
+`journal/AAAA-MM-DD/`: `orders.csv` sempre; `trades.csv` + `ledger.csv` só real; `context.json` do swing. Replay **não** grava. Front Ao vivo: default hoje; mínimo = primeiro dia real.
 
 ## Datasets
 
-Copiados de `trader-api/datasets`:
+- `WIN_1min_train.csv` (ago/2021–dez/2024), `WIN_1min_test.csv` (jan/2025–ago/2026)
+- M5 correspondentes; amostras `WINJ20_*` / `WINM20_*`
 
-- `WIN_1min_train.csv` (~30 MB, ago/2021–dez/2024)
-- `WIN_1min_test.csv` (~15 MB, jan/2025–ago/2026)
-- `WIN_5min_train.csv` / `WIN_5min_test.csv`
-- amostras `WINJ20_*` / `WINM20_*`
-
-Dumps brutos `WIN$D(M1).csv` / `WIN$D(M5).csv` não estavam no disco. Se o MT5 Genial/Clear estiver aberto, `copy_rates_range` pode atualizar.
+Split: treino ≤ 2024, teste ≥ 2025. Optuna na val **2024 H2**, não no teste.
 
 ## Stack e CLI
-
-- Python 3.11+, FastAPI, pandas, scikit-learn, Optuna, joblib, MetaTrader5 (Windows)
-- UI: React 19, Vite, Tailwind, Recharts
-- CLI: `python -m koletivo_trader train|study|replay|serve|mt5-check`
 
 ```bash
 cd api
@@ -233,20 +178,16 @@ python -m koletivo_trader serve
 ```
 
 ```bash
-cd ui
-npm install
-npm run dev
+cd ui && npm install && npm run dev
 ```
 
-## Status da implementação
+CLI: `train|study|replay|serve|mt5-check`.
+
+## Status
 
 | Bloco | Estado |
 | --- | --- |
-| Skeleton `ui/` + `api/` hexagonal + configs + datasets | Feito |
-| Domínio, fusão, risco, sessão, testes | Feito (pytest verde) |
-| Integrador MT5 + orquestrador ARMADO | Feito |
-| API 4 Hz + front clone + card de sinal | Feito |
-| Journal CSV + seletor de data | Feito |
-| Pipeline ML (rótulos, two-stage, Optuna em val 2024 H2) | Em iteração — ver [ml.md](ml.md) |
-| Estratégia OOS 2025–2026 altamente lucrativa | **Aberto** |
-| Repo público `arthurmb98/koletivo-trader` branch `staging` | Pendente |
+| Skeleton, domínio, MT5 ARMADO, UI 4 Hz, journal | Feito |
+| Repo público `staging` | Feito — [arthurmb98/koletivo-trader](https://github.com/arthurmb98/koletivo-trader) |
+| Vetores M1+volume, tipo futuro, Fib por peso, soma ≤ 0,4 | Documentado; código na próxima iteração |
+| Modelos swing/daytrade OOS lucrativos | Aberto — [ml.md](ml.md) |

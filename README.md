@@ -1,13 +1,13 @@
 # Koletivo Trader
 
-Robô de day trade para o mini índice (WIN), parte do Koletivo Hub. Remake do trader-api: swing de D-1 + daytrade de 15×1 min, ordem a mercado com stop/gain fixos, diário CSV e UI Koletivo.
+Robô de day trade para o mini índice (WIN), parte do Koletivo Hub. Remake do trader-api: daytrade em blocos de 5×1 min + volume, swing de D-1 e Fibonacci opcionais por peso (soma ≤ 0,4), ordem a mercado com stop/gain, diário CSV e UI Koletivo.
 
 Não é recomendação de investimento.
 
 ## Documentação
 
-- [Plano e arquitetura](docs/plano.md) — produto travado, camadas, orquestrador, journal, UI, status
-- [Machine learning](docs/ml.md) — rótulos, o que já falhou no treino, regras de backtest, próximos passos
+- [Plano e arquitetura](docs/plano.md) — entradas (preço, volume, futuro só no treino), fusão de pesos, orquestrador, journal, UI
+- [Machine learning](docs/ml.md) — tensor, Optuna, o que já falhou no treino, regras de backtest
 
 ## Pastas
 
