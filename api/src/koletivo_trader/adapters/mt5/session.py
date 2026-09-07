@@ -11,7 +11,7 @@ from typing import Any
 from koletivo_trader.adapters.config import load_named_config
 from koletivo_trader.domain.enums import ChartType, Side
 from koletivo_trader.domain.models import Signal
-from koletivo_trader.domain.session import SessionFilter
+from koletivo_trader.domain.session import GOLD_WINDOWS, SessionFilter
 
 WIN_MONTH_CODE = {
     1: "F",
@@ -165,7 +165,7 @@ def redact_text(text: str) -> str:
 
 def next_gold_window(now: datetime | None = None) -> str | None:
     clock = now or datetime.now()
-    windows = [(time(9, 15), time(11, 0)), (time(14, 30), time(17, 0))]
+    windows = [(time(int(a[:2]), int(a[3:5])), time(int(b[:2]), int(b[3:5]))) for a, b in GOLD_WINDOWS]
     weekday = clock.weekday()
     if weekday >= 5:
         days = 7 - weekday

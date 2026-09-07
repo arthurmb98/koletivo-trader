@@ -124,7 +124,7 @@ def create_app() -> FastAPI:
             initial_bank=bank,
             timeframe=TIMEFRAME,
             case=CASE,
-            lot=body.lot or "fixed",
+            lot=body.lot or "scaled",
         )
 
     @app.post("/api/live/stop")

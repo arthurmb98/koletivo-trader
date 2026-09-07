@@ -17,6 +17,7 @@ def main(argv: list[str] | None = None) -> None:
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--debug", action="store_true")
     sub.add_parser("mt5-check", help="Testa o terminal MT5 sem enviar ordem")
+    sub.add_parser("charts", help="Recalcula curvas do estudo sem retreinar")
     args = parser.parse_args(argv)
 
     if args.cmd in {"train", "study"}:
@@ -43,6 +44,11 @@ def main(argv: list[str] | None = None) -> None:
             reload=args.debug,
             log_level="debug" if args.debug else "info",
         )
+        return
+    if args.cmd == "charts":
+        from koletivo_trader.application.study import refresh_study_charts
+
+        print(refresh_study_charts())
         return
     if args.cmd == "mt5-check":
         from koletivo_trader.adapters.mt5.session import mt5_check

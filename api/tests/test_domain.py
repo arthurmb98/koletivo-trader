@@ -14,6 +14,16 @@ def _bar(i: int, open_: float, high: float, low: float, close: float, start: dat
     return Candle("WIN$", ts, open_, high, low, close, 1000)
 
 
+def test_gold_hours_run_until_17() -> None:
+    from koletivo_trader.domain.session import SessionFilter
+
+    flt = SessionFilter()
+    day = datetime(2026, 3, 13)
+    assert flt.allows(day.replace(hour=16, minute=5))
+    assert flt.allows(day.replace(hour=17, minute=0))
+    assert not flt.allows(day.replace(hour=17, minute=5))
+
+
 def test_contracts_for_bank() -> None:
     assert contracts_for_bank(500) == 1
     assert contracts_for_bank(1000) == 1
@@ -169,10 +179,14 @@ def test_near_gain_pulls_stop_into_profit() -> None:
 
 
 def test_genetic_repair_keeps_daytrade_majority_and_rr() -> None:
-    from koletivo_trader.ml.genetics import repair_genome, unpack
+    from koletivo_trader.ml.genetics import HI, LO, repair_genome, unpack
 
+    assert LO[2] == 0.17
+    assert HI[2] == 0.83
     g = repair_genome([100.0, 120.0, 0.5, 0.3, 0.3, 7.0])
     p = unpack(g)
     assert p["swing_weight"] + p["fib_weight"] <= 0.4 + 1e-9
     assert p["gain"] >= p["stop"] * 1.5 - 1e-9
     assert p["offset_points"] % 5 == 0
+    assert unpack(repair_genome([100.0, 200.0, 0.05, 0.0, 0.0, 0.0]))["min_hit"] == 0.17
+    assert unpack(repair_genome([100.0, 200.0, 0.99, 0.0, 0.0, 0.0]))["min_hit"] == 0.83

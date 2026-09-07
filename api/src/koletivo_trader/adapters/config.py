@@ -147,3 +147,15 @@ def load_named_config(name: str) -> AppConfig:
     if not path.exists():
         raise FileNotFoundError(f"Config {stem} não encontrada em {CONFIGS_DIR}")
     return load_config(path)
+
+
+def load_bank_config(bank: float) -> AppConfig:
+    """YAML da banca mais próxima (estudo / replay / ao vivo)."""
+    from koletivo_trader.domain.product import BANKS
+
+    chosen = min(BANKS, key=lambda item: abs(item - float(bank)))
+    name = f"best_bank_{int(chosen)}"
+    path = CONFIGS_DIR / f"{name}.yaml"
+    if path.exists():
+        return load_named_config(name)
+    return load_named_config("best_candles_m5_1000_a")

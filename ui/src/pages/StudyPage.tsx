@@ -140,8 +140,8 @@ function PeriodBars({ title, rows }: { title: string; rows: PeriodRow[] }) {
   return (
     <div className="rounded-2xl border border-border bg-elevated/40 p-4">
       <h3 className="font-display font-semibold">{title}</h3>
-      <div className="mt-4 h-56">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="mt-4 h-56 w-full min-w-0">
+        <ResponsiveContainer width="100%" height={224}>
           <BarChart data={data}>
             <CartesianGrid stroke="#3a3a3c" strokeDasharray="3 3" />
             <XAxis dataKey="t" hide />
@@ -496,8 +496,8 @@ export function StudyPage() {
                     Mesmo setup, lote crescente. Tombo pode passar da banca — não entra no ranking.
                   </p>
                 ) : null}
-                <div className="mt-4 h-72">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="mt-4 h-72 w-full min-w-0">
+                  <ResponsiveContainer width="100%" height={288}>
                     <AreaChart data={m.equity}>
                       <defs>
                         <linearGradient id="bank" x1="0" y1="0" x2="0" y2="1">
@@ -519,8 +519,8 @@ export function StudyPage() {
               </div>
               <div className="rounded-2xl border border-border bg-elevated/40 p-4 lg:col-span-2">
                 <h3 className="font-display font-semibold">Por horário</h3>
-                <div className="mt-4 h-72">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="mt-4 h-72 w-full min-w-0">
+                  <ResponsiveContainer width="100%" height={288}>
                     <BarChart data={hourly}>
                       <CartesianGrid stroke="#3a3a3c" strokeDasharray="3 3" />
                       <XAxis dataKey="hour" tick={{ fill: '#a1a1aa', fontSize: 12 }} />

@@ -23,6 +23,17 @@ def test_replay_meta_has_no_m1_or_last_candle() -> None:
     assert meta["banks"] == [500, 1000, 5000, 10000]
 
 
+def test_score_collects_empty_equity_curve() -> None:
+    from koletivo_trader.adapters.config import load_named_config
+    from koletivo_trader.ml.parameters import _score_prepared
+
+    cfg = load_named_config("default")
+    result = _score_prepared([], cfg, 60, 130, 0.6, 0.0, 1000.0, collect=True)
+    assert result.equity[0]["bank"] == 1000.0
+    assert result.hourly == {}
+    assert result.monthly == []
+
+
 def test_search_parameters_default_includes_10000() -> None:
     assert search_parameters.__defaults__ is not None
     banks = search_parameters.__defaults__[0]

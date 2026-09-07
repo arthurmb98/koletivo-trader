@@ -169,7 +169,7 @@ export const EMPTY_SNAP: LiveSnap = {
   running: false,
   done: false,
   error: null,
-  config: 'best_candles_m5_1000_a',
+  config: 'best_bank_1000',
   source: 'mt5',
   order_mode: 'mt5',
   interval_sec: 1,
@@ -178,7 +178,7 @@ export const EMPTY_SNAP: LiveSnap = {
   cursor: 0,
   n_bars: 0,
   initial_bank: 1000,
-  lot: 'fixed',
+  lot: 'scaled',
   bank: 1000,
   net_pnl: 0,
   today_pnl: 0,
@@ -190,7 +190,7 @@ export const EMPTY_SNAP: LiveSnap = {
   max_drawdown: 0,
   max_drawdown_pct: 0,
   contracts: 1,
-  max_contracts: 1,
+  max_contracts: 10,
   signal: null,
   position: null,
   pending: null,
@@ -213,7 +213,7 @@ export const CASE_LABEL: Record<CaseKey, string> = {
 export const TF_LABEL: Record<TfKey, string> = { m5: '5 min' }
 export const LOT_LABEL: Record<LotKey, string> = {
   fixed: '1 contrato',
-  scaled: 'Crescente / R$ 1.000',
+  scaled: 'Contratos da banca (estudo)',
 }
 export const PERIOD_LABEL: Record<PeriodLevel, string> = {
   daily: 'Diário',

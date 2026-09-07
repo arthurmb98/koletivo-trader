@@ -161,6 +161,44 @@ def leak_free_windows(
     return out
 
 
+def m1_window_for_closed_m5(
+    m1: list[Candle],
+    closed_m5: Candle,
+    *,
+    lookback: int = 15,
+) -> list[Candle]:
+    """15 M1 that the study uses when `closed_m5` has just finished (ends at T+4min)."""
+    last_m1_ts = closed_m5.timestamp + timedelta(minutes=4)
+    index = {c.timestamp: i for i, c in enumerate(m1)}
+    idx = index.get(last_m1_ts)
+    if idx is not None and idx + 1 >= lookback:
+        window = m1[idx + 1 - lookback : idx + 1]
+        if len(window) == lookback:
+            return window
+    closed = [c for c in m1 if c.timestamp <= last_m1_ts]
+    if len(closed) < lookback:
+        return []
+    return closed[-lookback:]
+
+
+def live_features_for_closed_m5(
+    m1: list[Candle],
+    m5: list[Candle],
+    closed_m5: Candle,
+    *,
+    lookback: int = 15,
+    prior_n: int = 6,
+) -> tuple[list[Candle], list[Candle]]:
+    """Live features at M5 close: same 15 M1 window and prior M5 as the study (includes the closed bar)."""
+    window = m1_window_for_closed_m5(m1, closed_m5, lookback=lookback)
+    same = [
+        c
+        for c in m5
+        if c.timestamp.date() == closed_m5.timestamp.date() and c.timestamp <= closed_m5.timestamp
+    ]
+    return window, same[-prior_n:]
+
+
 def prior_m5_bars(
     m5: list[Candle],
     entry: Candle,

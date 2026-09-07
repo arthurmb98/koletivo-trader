@@ -98,8 +98,8 @@ function PeriodChart({ title, rows }: { title: string; rows: { t: string; pnl: n
   return (
     <div className="rounded-2xl border border-border bg-elevated/40 p-4">
       <h3 className="font-display font-semibold">{title}</h3>
-      <div className="mt-4 h-56">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="mt-4 h-56 w-full min-w-0">
+        <ResponsiveContainer width="100%" height={224}>
           <BarChart data={rows}>
             <CartesianGrid stroke="#3a3a3c" strokeDasharray="3 3" />
             <XAxis dataKey="label" tick={{ fill: '#a1a1aa', fontSize: 11 }} minTickGap={16} />
@@ -386,8 +386,8 @@ export function SessionDashboard({ snap, emptyHint }: { snap: LiveSnap; emptyHin
           ) : (
             <p className="mt-3 text-muted-foreground">Nenhuma posição aberta.</p>
           )}
-          <div className="mt-6 h-40">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="mt-6 h-40 w-full min-w-0">
+            <ResponsiveContainer width="100%" height={160}>
               <LineChart data={candles}>
                 <CartesianGrid stroke="#3a3a3c" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={{ fill: '#a1a1aa', fontSize: 11 }} minTickGap={24} />
@@ -406,8 +406,8 @@ export function SessionDashboard({ snap, emptyHint }: { snap: LiveSnap; emptyHin
       <section className="relative mx-auto grid max-w-6xl gap-4 px-5 py-4 sm:px-8 lg:grid-cols-2">
         <div className="rounded-2xl border border-border bg-elevated/40 p-4">
           <h3 className="font-display font-semibold">Banca</h3>
-          <div className="mt-4 h-56">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="mt-4 h-56 w-full min-w-0">
+            <ResponsiveContainer width="100%" height={224}>
               <AreaChart data={equity}>
                 <CartesianGrid stroke="#3a3a3c" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={{ fill: '#a1a1aa', fontSize: 11 }} minTickGap={28} />
@@ -452,8 +452,8 @@ export function SessionDashboard({ snap, emptyHint }: { snap: LiveSnap; emptyHin
                   </td>
                 </tr>
               ) : (
-                snap.signals.slice(0, 12).map((s) => (
-                  <tr key={`${s.t}-${s.side}-${s.reason}`} className="border-t border-border/70">
+                snap.signals.slice(0, 12).map((s, idx) => (
+                  <tr key={`${s.t}-${s.side}-${s.reason}-${idx}`} className="border-t border-border/70">
                     <td className="px-4 py-2 tabular-nums">{clock(s.t)}</td>
                     <td className="px-4 py-2">
                       <SideMark side={s.side} />

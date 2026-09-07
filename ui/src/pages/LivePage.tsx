@@ -62,7 +62,7 @@ export function LivePage() {
   const caseKey = 'last_candles' as const
   const timeframe = 'm5' as const
   const [bank, setBank] = useState(1000)
-  const [lot, setLot] = useState<LotKey>('fixed')
+  const [lot, setLot] = useState<LotKey>('scaled')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [meta, setMeta] = useState<LiveMeta | null>(null)
@@ -226,8 +226,8 @@ export function LivePage() {
           </Field>
           <Field label="Lote">
             <select className={selectClass} value={lot} onChange={(e) => setLot(asLot(e.target.value))} disabled={locked}>
-              <option value="fixed">1 contrato</option>
-              <option value="scaled">Crescente / R$ 1.000</option>
+              <option value="fixed">{LOT_LABEL.fixed}</option>
+              <option value="scaled">{LOT_LABEL.scaled}</option>
             </select>
           </Field>
           <Field label="De">

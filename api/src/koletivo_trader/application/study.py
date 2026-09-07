@@ -173,14 +173,14 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
     prepared_test = prepare_eval(m1_test, m5_test, group_days(m5_train), cfg, daytrade, swing)
     oos = {}
     for bank, result in winners.items():
-        oos[bank] = score_fixed(prepared_test, cfg, result, float(bank))
+        oos[bank] = score_fixed(prepared_test, cfg, result, float(bank), collect=True)
         _print_result(f"OOS {bank}", oos[bank])
 
     if winners["1000"].net_pnl <= 0:
         print("Validação 1000 ainda negativa — varrendo limiar só na val…")
         base = winners["1000"]
         best_val = base
-        for min_hit in (0.28, 0.32, 0.36, 0.40, 0.44, 0.50, 0.56):
+        for min_hit in (0.17, 0.28, 0.36, 0.44, 0.56, 0.68, 0.83):
             cand = ParamResult(
                 base.stop_points,
                 base.gain_points,
@@ -200,7 +200,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
             if _objective_key(val_c) > _objective_key(best_val):
                 best_val = val_c
         winners["1000"] = best_val
-        oos["1000"] = score_fixed(prepared_test, cfg, best_val, 1000.0)
+        oos["1000"] = score_fixed(prepared_test, cfg, best_val, 1000.0, collect=True)
         for bank in winners:
             if bank == "1000":
                 continue
@@ -220,7 +220,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
                 0.0,
             )
             winners[bank] = score_fixed(prepared_val, cfg, cand, float(bank))
-            oos[bank] = score_fixed(prepared_test, cfg, cand, float(bank))
+            oos[bank] = score_fixed(prepared_test, cfg, cand, float(bank), collect=True)
 
     for bank, result in winners.items():
         path = CONFIGS_DIR / f"best_bank_{bank}.yaml"
@@ -262,6 +262,65 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
     }
 
 
+def refresh_study_charts() -> dict:
+    """Rebuild equity/hourly series from saved models and YAML, without retraining."""
+    import joblib
+
+    from koletivo_trader.adapters.candles import load_candles
+    from koletivo_trader.domain.risk import contracts_for_bank
+
+    cfg = load_named_config("best_candles_m5_1000_a")
+    day_path = RESULTS_DIR / "model_daytrade.joblib"
+    swing_path = RESULTS_DIR / "model_swing.joblib"
+    if not day_path.exists() or not swing_path.exists():
+        raise FileNotFoundError("Modele primeiro com python -m koletivo_trader train")
+    daytrade = joblib.load(day_path)
+    swing = joblib.load(swing_path)
+    print("Recalculando curvas OOS (sem retreino)…")
+    m1_test = load_candles(cfg.resolve_csv(cfg.data.test_m1))
+    m5_test = load_candles(cfg.resolve_csv(cfg.data.test_m5))
+    m5_train = load_candles(cfg.resolve_csv(cfg.data.train_m5))
+    prepared_test = prepare_eval(m1_test, m5_test, group_days(m5_train), cfg, daytrade, swing)
+    oos: dict[str, ParamResult] = {}
+    for bank in BANKS:
+        bank_cfg = load_named_config(f"best_bank_{int(bank)}")
+        seed = ParamResult(
+            bank_cfg.risk.stop_points,
+            bank_cfg.risk.gain_points,
+            bank_cfg.filters.min_hit_pct,
+            bank_cfg.filters.swing_weight,
+            bank_cfg.filters.fib_weight,
+            bank,
+            contracts_for_bank(bank),
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            offset_points=bank_cfg.execution.offset_points,
+        )
+        scored = score_fixed(prepared_test, cfg, seed, bank, collect=True)
+        oos[str(int(bank))] = scored
+        _print_result(f"OOS {int(bank)}", scored)
+    recipe = getattr(daytrade, "recipe", None) or DaytradeRecipe()
+    day_scores = {"train_rows": 0, "train_acc": 0.0}
+    swing_scores = {"train_rows": 0}
+    existing = RESULTS_DIR / "studies.json"
+    if existing.exists():
+        prev = json.loads(existing.read_text(encoding="utf-8"))
+        hit = (prev.get("parecer") or {}).get("ml_hit") or {}
+        leak = ((prev.get("timeframes") or {}).get("m5") or {}).get("leakage") or {}
+        day_scores["train_acc"] = float(hit.get("daytrade") or hit.get("m1") or 0)
+        day_scores["train_rows"] = int(leak.get("n_train") or 0)
+        swing_scores["train_rows"] = float(hit.get("swing") or hit.get("m5") or 0)
+    study = _build_study(cfg, day_scores, swing_scores, oos, recipe, [])
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    (RESULTS_DIR / "studies.json").write_text(json.dumps(study, ensure_ascii=False, indent=2), encoding="utf-8")
+    UI_PUBLIC.mkdir(parents=True, exist_ok=True)
+    (UI_PUBLIC / "studies.json").write_text(json.dumps(study, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "banks": {k: v.n_trades for k, v in oos.items()}}
+
+
 def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe, ranked) -> dict:
     leaderboard = []
     winners_node: dict = {CASE: {}}
@@ -297,8 +356,8 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
             "max_drawdown_pct": (result.max_dd / result.bank * 100.0) if result.bank else 0.0,
             "expectancy": result.expectancy,
             "trades_per_candle_pct": 0.0,
-            "hourly": {},
-            "equity": [],
+            "hourly": result.hourly,
+            "equity": result.equity,
             "trades": [],
         }
         winner = {
@@ -320,6 +379,17 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
                 "test_end": "2026-08-26",
             },
             "metrics": metrics,
+            "by_period": {
+                "daily": result.daily,
+                "weekly": result.weekly,
+                "monthly": result.monthly,
+                "summary": {
+                    "day": {"best": None, "worst": None, "avg": 0, "positive_pct": 0, "n_days": len(result.daily)},
+                    "week": {"best": None, "worst": None, "avg": 0, "positive_pct": 0, "n_days": len(result.weekly)},
+                    "month": {"best": None, "worst": None, "avg": 0, "positive_pct": 0, "n_days": len(result.monthly)},
+                    "n_days": len(result.daily),
+                },
+            },
             "trades": [],
             "model_test": {"test_direction_hit": day_scores.get("train_acc", 0), "test_mae_close": 0},
         }

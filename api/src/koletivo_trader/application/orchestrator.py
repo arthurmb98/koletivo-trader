@@ -3,13 +3,11 @@ from __future__ import annotations
 import threading
 import time
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import joblib
 
-from koletivo_trader.adapters.candles import load_candles
-from koletivo_trader.adapters.config import AppConfig, load_named_config
+from koletivo_trader.adapters.config import load_bank_config
 from koletivo_trader.adapters.journal import CsvJournal
 from koletivo_trader.adapters.mt5.broker import Mt5Broker
 from koletivo_trader.adapters.mt5.session import (
@@ -21,17 +19,16 @@ from koletivo_trader.adapters.mt5.session import (
     session_wait_reason,
 )
 from koletivo_trader.domain.copy import phrase_for
-from koletivo_trader.domain.enums import ChartType, OrderMode, Side, TradeResult
+from koletivo_trader.domain.enums import OrderMode, Side, TradeResult
 from koletivo_trader.domain.fibonacci import fib_boost
 from koletivo_trader.domain.fusion import fuse_signals
 from koletivo_trader.domain.models import Candle, Position, SessionContext, Signal, Trade
 from koletivo_trader.domain.risk import RiskCalculator, contracts_for_bank, protect_levels, round_to_tick
 from koletivo_trader.domain.session import SessionFilter
+from koletivo_trader.ml.labels import live_features_for_closed_m5
 from koletivo_trader.ml.models import DaytradeModel, SwingModel, group_days
 from koletivo_trader.domain.product import CASE, LOOKBACK_M1, TIMEFRAME
 from koletivo_trader.paths import RESULTS_DIR
-
-CONFIG_NAME = "best_candles_m5_1000_a"
 
 
 def _today() -> date:
@@ -50,12 +47,7 @@ class LiveEngine:
     """
 
     def __init__(self) -> None:
-        cfg_name = "best_bank_1000"
-        from koletivo_trader.paths import CONFIGS_DIR as _cfgs
-
-        if not (_cfgs / f"{cfg_name}.yaml").exists():
-            cfg_name = CONFIG_NAME
-        self.cfg = load_named_config(cfg_name)
+        self.cfg = load_bank_config(1000)
         self.session = SessionFilter.from_config(self.cfg)
         self.risk = RiskCalculator(
             self.cfg.risk.stop_points,
@@ -105,6 +97,20 @@ class LiveEngine:
             self.daytrade = joblib.load(day_path)
         if swing_path.exists():
             self.swing = joblib.load(swing_path)
+
+    def _apply_bank_config(self, bank: float) -> None:
+        cfg = load_bank_config(bank)
+        self.contracts = contracts_for_bank(bank)
+        if cfg.name == self.cfg.name:
+            return
+        self.cfg = cfg
+        self.session = SessionFilter.from_config(cfg)
+        self.risk = RiskCalculator(
+            cfg.risk.stop_points,
+            cfg.risk.gain_points,
+            cfg.instrument.tick_size,
+        )
+        self.initial_bank = cfg.account.initial_bank
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -321,7 +327,7 @@ class LiveEngine:
         }
         if acc.get("bank"):
             self.bank = float(acc["bank"])
-            self.contracts = contracts_for_bank(self.bank)
+            self._apply_bank_config(self.bank)
         quote = self.broker.quote()
         if quote:
             self.quote = quote
@@ -366,7 +372,7 @@ class LiveEngine:
             return
         if not self.armed:
             return
-        m5 = self._closed("m5", 8)
+        m5 = self._closed("m5", 24)
         if not m5:
             self.wait_reason = "aguardando_candle"
             return
@@ -385,19 +391,22 @@ class LiveEngine:
         bar_id = _bar_id(last.timestamp)
         if bar_id in self.decided_bars:
             return
-        if not self.session.allows(now) and not self.session.allows(last.timestamp):
-            self.skip_reason = self.wait_reason
-            return
         self.decided_bars.add(bar_id)
-        m1 = self._closed("m1", LOOKBACK_M1 + 5)
-        window = m1[-LOOKBACK_M1:]
+        entry_ts = last.timestamp + timedelta(minutes=5)
+        if getattr(self.daytrade.recipe, "morning_only", False) and entry_ts.hour >= 11:
+            self.skip_reason = "morning_only"
+            return
+        if not self.session.allows(entry_ts):
+            self.skip_reason = "fora_da_sessao"
+            return
+        m1 = self._closed("m1", LOOKBACK_M1 + 30)
+        window, prior_m5 = live_features_for_closed_m5(m1, m5, last, lookback=LOOKBACK_M1)
         if len(window) < LOOKBACK_M1:
             self.skip_reason = "sem_m1"
             return
         stop, take = self.risk.levels(Side.BUY, last.close)
-        prior_m5 = m5[:-1][-6:]
         raw = self.daytrade.predict(window, last.close, stop, take, prior_m5)
-        minutes = self.session.minutes_from_open(last.timestamp)
+        minutes = self.session.minutes_from_open(entry_ts)
         boost = fib_boost(
             raw.side,
             last.close,

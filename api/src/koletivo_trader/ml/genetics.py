@@ -9,8 +9,8 @@ from koletivo_trader.domain.fibonacci import AUX_WEIGHT_CAP, clamp_decider_weigh
 from koletivo_trader.domain.risk import round_to_tick
 
 # stop, gain, min_hit, swing_w, fib_w, offset
-LO = np.array([40.0, 80.0, 0.28, 0.0, 0.0, -50.0])
-HI = np.array([120.0, 240.0, 0.72, 0.40, 0.40, 50.0])
+LO = np.array([40.0, 80.0, 0.17, 0.0, 0.0, -50.0])
+HI = np.array([120.0, 240.0, 0.83, 0.40, 0.40, 50.0])
 TICK = 5.0
 
 

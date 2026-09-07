@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -10,7 +11,7 @@ from koletivo_trader.domain.enums import Side, TradeResult
 from koletivo_trader.domain.fibonacci import fib_boost
 from koletivo_trader.domain.fusion import fuse_signals
 from koletivo_trader.domain.market import classify_chart
-from koletivo_trader.domain.models import Candle, Signal
+from koletivo_trader.domain.models import Candle, Signal, Trade
 from koletivo_trader.domain.product import BANKS
 from koletivo_trader.domain.risk import contracts_for_bank
 from koletivo_trader.domain.session import SessionFilter
@@ -37,9 +38,19 @@ class ParamResult:
     profit_factor: float = 1.0
     expectancy: float = 0.0
     offset_points: float = 0.0
+    equity: list = field(default_factory=list)
+    hourly: dict = field(default_factory=dict)
+    daily: list = field(default_factory=list)
+    weekly: list = field(default_factory=list)
+    monthly: list = field(default_factory=list)
+    trades: list = field(default_factory=list)
+    signals: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return self.__dict__.copy()
+        data = self.__dict__.copy()
+        for key in ("equity", "hourly", "daily", "weekly", "monthly", "trades", "signals"):
+            data.pop(key, None)
+        return data
 
 
 @dataclass
@@ -62,6 +73,7 @@ def _prepare(
     model: DaytradeModel,
     m5: list[Candle],
     m1: list[Candle],
+    verbose: bool = True,
 ) -> list[_Prepared]:
     session = SessionFilter.from_config(cfg)
     m5_index = {c.timestamp: i for i, c in enumerate(m5)}
@@ -77,7 +89,8 @@ def _prepare(
         filtered.append((window, future, entry_bar, prior_m5_bars(m5, entry_bar, index=m5_index)))
     if not filtered:
         return []
-    print(f"  montando features de {len(filtered)} barras…", flush=True)
+    if verbose:
+        print(f"  montando features de {len(filtered)} barras…", flush=True)
     X = np.vstack([daytrade_features(w, p) for w, _, _, p in filtered])
     p_buy, p_sell, q_buy, q_sell = model.score_matrix(X)
     from koletivo_trader.domain.enums import ChartType
@@ -171,8 +184,11 @@ def _score_prepared(
     bank: float,
     fib_weight: float = 0.0,
     offset_points: float = 0.0,
+    collect: bool = False,
+    collect_signals: bool = False,
+    contracts: int | None = None,
 ) -> ParamResult:
-    contracts = contracts_for_bank(bank)
+    contracts = contracts_for_bank(bank) if contracts is None else int(contracts)
     pv = cfg.account.point_value
     tick = float(cfg.instrument.tick_size)
     from koletivo_trader.domain.risk import round_to_tick
@@ -189,6 +205,15 @@ def _score_prepared(
     cooldown = None
     daily_loss_cap = float(cfg.risk.daily_loss_points or 0.0)
     day_points = 0.0
+    curve: list[dict] = [{"t": "start", "bank": bank}] if collect else []
+    collected_trades: list[Trade] = []
+    collected_signals: list[dict] = []
+    hourly: dict[str, dict] = defaultdict(lambda: {"trades": 0, "wins": 0, "pnl": 0.0})
+    buckets = {
+        "daily": defaultdict(lambda: {"t": "", "pnl": 0.0, "n_trades": 0, "n_wins": 0}),
+        "weekly": defaultdict(lambda: {"t": "", "pnl": 0.0, "n_trades": 0, "n_wins": 0}),
+        "monthly": defaultdict(lambda: {"t": "", "pnl": 0.0, "n_trades": 0, "n_wins": 0}),
+    }
     for row in rows:
         day = row.ts.date() if hasattr(row.ts, "date") else None
         if day != last_day:
@@ -208,6 +233,10 @@ def _score_prepared(
             fib_weight=fib_weight,
             fib_boost=row.fib_boost,
         )
+        if collect_signals:
+            payload = fused.to_dict()
+            payload["t"] = row.ts.isoformat() if hasattr(row.ts, "isoformat") else str(row.ts)
+            collected_signals.append(payload)
         if fused.side is Side.HOLD:
             continue
         if trades_today >= int(cfg.risk.max_trades_per_day):
@@ -232,9 +261,50 @@ def _score_prepared(
         equity += pnl
         peak = max(peak, equity)
         max_dd = max(max_dd, peak - equity)
+        if collect:
+            stamp = row.ts
+            iso = stamp.isoformat(timespec="minutes") if hasattr(stamp, "isoformat") else str(stamp)
+            curve.append({"t": iso, "bank": round(equity, 2)})
+            hour = str(stamp.hour) if hasattr(stamp, "hour") else "0"
+            hourly[hour]["trades"] += 1
+            hourly[hour]["wins"] += 1 if pnl > 0 else 0
+            hourly[hour]["pnl"] += pnl
+            day_key = stamp.date().isoformat() if hasattr(stamp, "date") else iso[:10]
+            week_key = stamp.strftime("%G-W%V") if hasattr(stamp, "strftime") else day_key
+            month_key = stamp.strftime("%Y-%m") if hasattr(stamp, "strftime") else day_key[:7]
+            for key, label in (("daily", day_key), ("weekly", week_key), ("monthly", month_key)):
+                bucket = buckets[key][label]
+                bucket["t"] = label
+                bucket["pnl"] += pnl
+                bucket["n_trades"] += 1
+                if pnl > 0:
+                    bucket["n_wins"] += 1
+            if fused.side is Side.BUY:
+                stop_px, take_px = entry - stop, entry + gain
+                exit_px = entry + points
+            else:
+                stop_px, take_px = entry + stop, entry - gain
+                exit_px = entry - points
+            collected_trades.append(
+                Trade(
+                    side=fused.side,
+                    entry_time=row.ts if hasattr(row.ts, "isoformat") else stamp,
+                    exit_time=hit_ts,
+                    entry=entry,
+                    exit=exit_px,
+                    stop=stop_px,
+                    take=take_px,
+                    points=points,
+                    pnl=pnl,
+                    result=result,
+                    reason=fused.reason,
+                    contracts=contracts,
+                )
+            )
     win_rate = (n_wins / n_trades * 100.0) if n_trades else 0.0
     pf = (gross_win / gross_loss) if gross_loss else (2.0 if gross_win else 0.0)
     exp = ((equity - bank) / n_trades) if n_trades else 0.0
+    series = _series_payload(curve, hourly, buckets) if collect else {}
     return ParamResult(
         stop,
         gain,
@@ -251,7 +321,34 @@ def _score_prepared(
         pf,
         exp,
         offset_points,
+        equity=series.get("equity", []),
+        hourly=series.get("hourly", {}),
+        daily=series.get("daily", []),
+        weekly=series.get("weekly", []),
+        monthly=series.get("monthly", []),
+        trades=collected_trades,
+        signals=collected_signals,
     )
+
+
+def _downsample(points: list, max_n: int = 400) -> list:
+    if len(points) <= max_n:
+        return points
+    step = max(1, (len(points) - 1) // (max_n - 1))
+    out = points[::step]
+    if out[-1] != points[-1]:
+        out.append(points[-1])
+    return out
+
+
+def _series_payload(curve: list, hourly: dict, buckets: dict) -> dict:
+    return {
+        "equity": _downsample(curve),
+        "hourly": {k: dict(v) for k, v in sorted(hourly.items(), key=lambda item: int(item[0]))},
+        "daily": [dict(v) for _, v in sorted(buckets["daily"].items())],
+        "weekly": [dict(v) for _, v in sorted(buckets["weekly"].items())],
+        "monthly": [dict(v) for _, v in sorted(buckets["monthly"].items())],
+    }
 
 
 def _swing_map(m5_eval: list[Candle], m5_prev_days: list[list[Candle]], swing: SwingModel) -> dict:
@@ -272,13 +369,16 @@ def prepare_eval(
     cfg: AppConfig,
     model: DaytradeModel,
     swing: SwingModel,
+    verbose: bool = True,
 ) -> list[_Prepared]:
     windows = leak_free_windows(m1, m5)
-    print(f"  {len(windows)} janelas brutas, swing + features…", flush=True)
+    if verbose:
+        print(f"  {len(windows)} janelas brutas, swing + features…", flush=True)
     swing_by_day = _swing_map(m5, m5_prev_days, swing)
-    prepared = _prepare(windows, swing_by_day, cfg, model, m5, m1)
+    prepared = _prepare(windows, swing_by_day, cfg, model, m5, m1, verbose=verbose)
     n_dir = sum(1 for row in prepared if row.raw.side in {Side.BUY, Side.SELL})
-    print(f"  janelas={len(windows)} preparadas={len(prepared)} direcionais={n_dir}")
+    if verbose:
+        print(f"  janelas={len(windows)} preparadas={len(prepared)} direcionais={n_dir}")
     return prepared
 
 
@@ -447,6 +547,9 @@ def score_fixed(
     cfg: AppConfig,
     result: ParamResult,
     bank: float | None = None,
+    collect: bool = False,
+    collect_signals: bool = False,
+    contracts: int | None = None,
 ) -> ParamResult:
     return _score_prepared(
         prepared,
@@ -458,4 +561,33 @@ def score_fixed(
         bank if bank is not None else result.bank,
         result.fib_weight,
         result.offset_points,
+        collect=collect,
+        collect_signals=collect_signals,
+        contracts=contracts,
+    )
+
+
+def score_bank_window(
+    prepared: list[_Prepared],
+    cfg: AppConfig,
+    bank: float,
+    *,
+    lot: str = "scaled",
+    collect_signals: bool = True,
+) -> ParamResult:
+    """Same path as the study: M1 touch, cooldown, 8/day, YAML stop/gain/offset/fusion."""
+    contracts = 1 if lot == "fixed" else contracts_for_bank(bank)
+    return _score_prepared(
+        prepared,
+        cfg,
+        cfg.risk.stop_points,
+        cfg.risk.gain_points,
+        cfg.filters.min_hit_pct,
+        cfg.filters.swing_weight,
+        bank,
+        cfg.filters.fib_weight,
+        float(getattr(cfg.execution, "offset_points", 0.0) or 0.0),
+        collect=True,
+        collect_signals=collect_signals,
+        contracts=contracts,
     )

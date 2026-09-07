@@ -54,6 +54,7 @@ Fibonacci assinado: proximidade aos 38,2/50/61,8, sinal + se alinhado ao daytrad
 Não é Optuna. Não é uma terceira ML de sinal.
 
 - Representação real: `[stop, gain, min_hit, swing_w, fib_w, offset]`
+- Caixa de `min_hit`: 17%–83%
 - Reparo: tick 5, `gain ≥ 1,5 × stop`, `swing_w + fib_w ≤ 0,4`
 - SBX (η=15), mutação polinomial (η=20), torneio k=3, elitismo, imigração ~15%
 - População ~24, ≤16 gerações, early-stop se a elite não sobe

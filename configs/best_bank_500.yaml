@@ -14,8 +14,8 @@ data:
   test_m5: datasets/WIN_5min_test.csv
 risk:
   mode: fixed
-  stop_points: 40.0
-  gain_points: 125.0
+  stop_points: 105.0
+  gain_points: 160.0
   rr_ratio: 2.0
   atr_period: 14
   trailing_enabled: true
@@ -33,13 +33,13 @@ filters:
   lunch_start: '11:00'
   lunch_end: '14:30'
   gold_hours_only: true
-  min_hit_pct: 0.6419828374774994
-  swing_weight: 0.0
-  fib_weight: 0.10763197014708706
+  min_hit_pct: 0.7752934802611694
+  swing_weight: 0.3010341573966005
+  fib_weight: 0.0
   first_block_minutes: 15
 execution:
   entry_mode: market_open
-  offset_points: -50.0
+  offset_points: 45.0
   max_tick_age_ms: 1500
   in_position_poll_ms: 20
   idle_poll_ms: 100

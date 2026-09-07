@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import datetime, time
 
 
+GOLD_WINDOWS = (("09:15", "11:00"), ("14:30", "17:00"))
+
+
 def _parse_hhmm(value: str) -> time:
     hour, minute = value.split(":")[:2]
     return time(int(hour), int(minute))
@@ -24,7 +27,7 @@ class SessionFilter:
         self.lunch_start = _parse_hhmm(lunch_start)
         self.lunch_end = _parse_hhmm(lunch_end)
         self.gold_only = gold_hours_only
-        self.gold = [(_parse_hhmm("09:15"), _parse_hhmm("11:00")), (_parse_hhmm("14:30"), _parse_hhmm("17:00"))]
+        self.gold = [(_parse_hhmm(start), _parse_hhmm(end)) for start, end in GOLD_WINDOWS]
 
     @classmethod
     def from_config(cls, cfg) -> "SessionFilter":
