@@ -11,6 +11,7 @@ from koletivo_trader.domain.fibonacci import fib_boost
 from koletivo_trader.domain.fusion import fuse_signals
 from koletivo_trader.domain.market import classify_chart
 from koletivo_trader.domain.models import Candle, Signal
+from koletivo_trader.domain.product import BANKS
 from koletivo_trader.domain.risk import contracts_for_bank
 from koletivo_trader.domain.session import SessionFilter
 from koletivo_trader.ml.features import daytrade_features, slope_norm
@@ -329,7 +330,7 @@ def search_parameters(
     cfg: AppConfig,
     model: DaytradeModel,
     swing: SwingModel,
-    banks: tuple[float, ...] = (500.0, 1000.0, 5000.0),
+    banks: tuple[float, ...] = BANKS,
     n_trials: int = 36,
     prepared: list[_Prepared] | None = None,
 ) -> dict[str, ParamResult]:

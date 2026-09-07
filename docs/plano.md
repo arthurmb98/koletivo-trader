@@ -81,6 +81,8 @@ Testes pytest no domínio (sem leakage, fusão aditiva, Fib, offset). Sem `order
 
 **Gráfico curto (15×M1 ≈ 3×M5):** `impulse_up/down`, `pullback_up/down`, `consolidation`, `breakout`, `reversal`, `indecision`.
 
+Não há treino nem UI de operação em 1 min, nem caso “último candle”. M1 só monta o tensor da estratégia de **últimos candles em 5 min**. Só a banca muda (500, 1000, 5000, 10000).
+
 Pré-rótulo determinístico no treino: tipo do passado (feature) e tipo do futuro (alvo). Ao vivo o tipo futuro é **previsto**, nunca lido do preço que ainda não existe.
 
 ## Daytrade — 3 entradas
@@ -151,7 +153,7 @@ Fitness: walk-forward purged (3 folds + embargo) na val **2024 H2**. Holdout de 
 
 Como esses genes não treinam o HGB do daytrade, **não há retreino de ML por geração** — só replay do sinal já previsto. O swing usa semente 100/200 uma vez no `train`.
 
-Saída: `configs/best_bank_{500,1000,5000}.yaml`. Bancas: 500→1 contrato, 1000→1, +1 a cada R$ 1000, teto 10.
+Saída: `configs/best_bank_{500,1000,5000,10000}.yaml`. Caso e tempo gráfico são fixos (últimos candles, M5). Bancas: 500→1 contrato, 1000→1, +1 a cada R$ 1000, teto 10 (banca 10k).
 
 ## Orquestrador (Windows / MT5)
 

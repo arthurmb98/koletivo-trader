@@ -9,6 +9,7 @@ from koletivo_trader.adapters.mt5.session import (
     SymbolCandidate,
     enable_algo_trading,
     server_looks_demo,
+    strip_secrets,
 )
 from koletivo_trader.application.ports import Broker
 from koletivo_trader.domain.enums import Side
@@ -612,7 +613,7 @@ class Mt5Broker(Broker):
 
 
 def _safe_request(request: dict[str, Any]) -> dict[str, Any]:
-    return {key: request[key] for key in request}
+    return strip_secrets(dict(request))
 
 
 def filling_from_mode(mode: int, has_return: bool, has_ioc: bool, has_fok: bool) -> str:

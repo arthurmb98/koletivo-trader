@@ -25,8 +25,8 @@ export type TradeSnap = {
   contracts?: number
 }
 
-export type CaseKey = 'last_candle' | 'last_candles'
-export type TfKey = 'm1' | 'm5'
+export type CaseKey = 'last_candles'
+export type TfKey = 'm5'
 export type LotKey = 'fixed' | 'scaled'
 export type PeriodLevel = 'daily' | 'weekly' | 'monthly' | 'quarterly'
 
@@ -208,10 +208,9 @@ export const EMPTY_SNAP: LiveSnap = {
 }
 
 export const CASE_LABEL: Record<CaseKey, string> = {
-  last_candle: 'Último candle',
   last_candles: 'Últimos candles',
 }
-export const TF_LABEL: Record<TfKey, string> = { m1: '1 min', m5: '5 min' }
+export const TF_LABEL: Record<TfKey, string> = { m5: '5 min' }
 export const LOT_LABEL: Record<LotKey, string> = {
   fixed: '1 contrato',
   scaled: 'Crescente / R$ 1.000',
@@ -223,12 +222,12 @@ export const PERIOD_LABEL: Record<PeriodLevel, string> = {
   quarterly: 'Trimestral',
 }
 
-export function asCase(value: string | undefined | null): CaseKey {
-  return value === 'last_candle' ? 'last_candle' : 'last_candles'
+export function asCase(_value: string | undefined | null): CaseKey {
+  return 'last_candles'
 }
 
-export function asTf(value: string | undefined | null): TfKey {
-  return value === 'm1' ? 'm1' : 'm5'
+export function asTf(_value: string | undefined | null): TfKey {
+  return 'm5'
 }
 
 export function asLot(value: string | undefined | null): LotKey {

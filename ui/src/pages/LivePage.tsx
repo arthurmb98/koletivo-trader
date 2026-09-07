@@ -6,21 +6,17 @@ import {
   EMPTY_SNAP,
   LOT_LABEL,
   TF_LABEL,
-  asCase,
   asLot,
-  asTf,
   clock,
   dayLabel,
-  type CaseKey,
   type LiveMeta,
   type LiveSnap,
   type LotKey,
-  type TfKey,
 } from '@/lib/liveTypes'
 import { readJson } from '@/lib/utils'
 
 const RANGE_MIN = '2025-01-01'
-const FALLBACK_BANKS = [500, 1000, 2000, 3000, 5000, 10000, 15000]
+const FALLBACK_BANKS = [500, 1000, 5000, 10000]
 const selectClass = 'h-9 rounded-lg border border-border bg-elevated/60 px-3 text-sm'
 
 function addMonths(iso: string, months: number) {
@@ -63,8 +59,8 @@ export function LivePage() {
   const [source, setSource] = useState<'paper' | 'mt5'>('paper')
   const [intervalSec, setIntervalSec] = useState(0.001)
   const [busy, setBusy] = useState(false)
-  const [caseKey, setCaseKey] = useState<CaseKey>('last_candles')
-  const [timeframe, setTimeframe] = useState<TfKey>('m5')
+  const caseKey = 'last_candles' as const
+  const timeframe = 'm5' as const
   const [bank, setBank] = useState(1000)
   const [lot, setLot] = useState<LotKey>('fixed')
   const [start, setStart] = useState('')
@@ -75,7 +71,7 @@ export function LivePage() {
     let alive = true
     const load = async () => {
       try {
-        const res = await fetch(`/api/live/meta?timeframe=${timeframe}`, { cache: 'no-store' })
+        const res = await fetch('/api/live/meta?timeframe=m5', { cache: 'no-store' })
         if (!res.ok) throw new Error('fail')
         const json = await readJson<LiveMeta>(res)
         if (!alive) return
@@ -91,7 +87,7 @@ export function LivePage() {
     return () => {
       alive = false
     }
-  }, [timeframe])
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -113,8 +109,6 @@ export function LivePage() {
         if (json.interval_sec) setIntervalSec(json.interval_sec)
         if (!hydrated) {
           hydrated = true
-          if (json.case) setCaseKey(asCase(json.case))
-          if (json.timeframe) setTimeframe(asTf(json.timeframe))
           if (json.initial_bank) setBank(Number(json.initial_bank))
           if (json.lot) setLot(asLot(json.lot))
           const from = (json.start || json.window_start || '').slice(0, 10)
@@ -221,17 +215,6 @@ export function LivePage() {
             : ''}
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-2">
-          <Field label="Caso">
-            <select
-              className={selectClass}
-              value={caseKey}
-              onChange={(e) => setCaseKey(asCase(e.target.value))}
-              disabled={locked}
-            >
-              <option value="last_candles">Últimos candles</option>
-              <option value="last_candle">Último candle</option>
-            </select>
-          </Field>
           <Field label="Banca">
             <select className={selectClass} value={bank} onChange={(e) => setBank(Number(e.target.value))} disabled={locked}>
               {banks.map((value) => (
@@ -245,12 +228,6 @@ export function LivePage() {
             <select className={selectClass} value={lot} onChange={(e) => setLot(asLot(e.target.value))} disabled={locked}>
               <option value="fixed">1 contrato</option>
               <option value="scaled">Crescente / R$ 1.000</option>
-            </select>
-          </Field>
-          <Field label="Gráfico">
-            <select className={selectClass} value={timeframe} onChange={(e) => setTimeframe(asTf(e.target.value))} disabled={locked}>
-              <option value="m5">5 min</option>
-              <option value="m1">1 min</option>
             </select>
           </Field>
           <Field label="De">
@@ -308,8 +285,8 @@ export function LivePage() {
               disabled={busy || snap.running || Boolean(dateError)}
               onClick={() =>
                 void post('/api/live/start', {
-                  case: caseKey,
-                  timeframe,
+                  case: 'last_candles',
+                  timeframe: 'm5',
                   initial_bank: bank,
                   lot,
                   start: source === 'paper' ? start : undefined,

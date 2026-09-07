@@ -14,6 +14,7 @@ from koletivo_trader.adapters.journal import CsvJournal
 from koletivo_trader.adapters.mt5.session import mt5_check as run_mt5_check
 from koletivo_trader.application.orchestrator import get_live_engine
 from koletivo_trader.application.replay import get_replay_engine, replay_meta
+from koletivo_trader.domain.product import BANKS, CASE, TIMEFRAME
 from koletivo_trader.paths import RESULTS_DIR, UI_DIST, UI_PUBLIC
 
 
@@ -23,8 +24,8 @@ class RealtimeStart(BaseModel):
 
 
 class LiveStart(BaseModel):
-    case: str = "last_candles"
-    timeframe: str = "m5"
+    case: str = CASE
+    timeframe: str = TIMEFRAME
     initial_bank: float = 1000
     start: str | None = None
     end: str | None = None
@@ -103,8 +104,8 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/live/meta")
-    def live_meta(timeframe: str = "m5") -> dict[str, Any]:
-        return replay_meta(timeframe)
+    def live_meta(timeframe: str = TIMEFRAME) -> dict[str, Any]:
+        return replay_meta(TIMEFRAME)
 
     @app.get("/api/live")
     def live_status() -> dict[str, Any]:
@@ -114,12 +115,15 @@ def create_app() -> FastAPI:
     def live_start(body: LiveStart) -> dict[str, Any]:
         start = body.start or "2026-08-17"
         end = body.end or "2026-08-21"
+        bank = float(body.initial_bank)
+        if bank not in BANKS:
+            bank = min(BANKS, key=lambda item: abs(item - bank))
         return get_replay_engine().start(
             start=start,
             end=end,
-            initial_bank=body.initial_bank,
-            timeframe=body.timeframe,
-            case=body.case,
+            initial_bank=bank,
+            timeframe=TIMEFRAME,
+            case=CASE,
             lot=body.lot or "fixed",
         )
 

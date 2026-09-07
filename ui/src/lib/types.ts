@@ -122,9 +122,9 @@ export type StudyBlock = {
   leaderboard: { net_pnl: number; n_trades: number; win_rate: number; profit_factor: number }[]
 }
 
-export type BankKey = '500' | '1000'
-export type CaseKey = 'last_candle' | 'last_candles'
-export type TfKey = 'm1' | 'm5'
+export type BankKey = '500' | '1000' | '5000' | '10000'
+export type CaseKey = 'last_candles'
+export type TfKey = 'm5'
 
 export type ParecerMonthly = {
   case: string
@@ -153,7 +153,7 @@ export type ParecerCaseAvg = {
 
 export type Parecer = {
   headline: string
-  ml_hit: { m1: number; m5: number }
+  ml_hit: { daytrade?: number; swing?: number; m1?: number; m5?: number }
   n_months_note: string
   by_case?: ParecerCaseAvg[]
   monthly: ParecerMonthly[]
@@ -178,8 +178,8 @@ export type StudyFile = {
   timeframe_labels?: Record<string, string>
   n_configs_total: number
   timeframes: {
-    m1: { leakage: Leakage; model_test: { test_direction_hit: number; test_mae_close: number; test_rmse_close: number }; lookback?: number }
     m5: { leakage: Leakage; model_test: { test_direction_hit: number; test_mae_close: number; test_rmse_close: number }; lookback?: number }
+    m1?: { leakage: Leakage; model_test: { test_direction_hit: number; test_mae_close: number; test_rmse_close: number }; lookback?: number }
   }
   studies: Record<string, Record<string, StudyBlock>>
   winners: Record<string, Record<string, Record<string, Winner[]> | Winner[]>>

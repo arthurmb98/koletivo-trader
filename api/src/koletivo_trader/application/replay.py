@@ -10,6 +10,7 @@ from koletivo_trader.domain.enums import Side, TradeResult
 from koletivo_trader.domain.fibonacci import fib_boost
 from koletivo_trader.domain.fusion import fuse_signals
 from koletivo_trader.domain.models import Trade
+from koletivo_trader.domain.product import BANKS, CASE, TIMEFRAME
 from koletivo_trader.domain.risk import RiskCalculator, contracts_for_bank, round_to_tick
 from koletivo_trader.domain.session import SessionFilter
 from koletivo_trader.ml.labels import simulate_touch
@@ -40,8 +41,8 @@ class ReplayEngine:
             "done": False,
             "error": None,
             "config": self.cfg.name,
-            "case": "last_candles",
-            "timeframe": "m5",
+            "case": CASE,
+            "timeframe": TIMEFRAME,
             "source": "paper",
             "order_mode": "paper",
             "interval_sec": 1,
@@ -100,8 +101,8 @@ class ReplayEngine:
         start: str,
         end: str,
         initial_bank: float = 1000.0,
-        timeframe: str = "m5",
-        case: str = "last_candles",
+        timeframe: str = TIMEFRAME,
+        case: str = CASE,
         lot: str = "fixed",
         **_kwargs: Any,
     ) -> dict[str, Any]:
@@ -290,13 +291,13 @@ def get_replay_engine() -> ReplayEngine:
     return _REPLAY
 
 
-def replay_meta(timeframe: str = "m5") -> dict[str, Any]:
+def replay_meta(timeframe: str = TIMEFRAME) -> dict[str, Any]:
     del timeframe
     return {
-        "banks": [500, 1000, 2000, 3000, 5000, 10000],
-        "cases": [{"key": "last_candles", "label": "15 x M1 → 3 x M5"}],
-        "timeframes": [{"key": "m5", "label": "5 min"}],
-        "timeframe": "m5",
+        "banks": [int(bank) for bank in BANKS],
+        "cases": [{"key": CASE, "label": "Últimos candles"}],
+        "timeframes": [{"key": TIMEFRAME, "label": "5 min"}],
+        "timeframe": TIMEFRAME,
         "min_date": "2025-01-02",
         "max_date": "2026-08-26",
         "default_start": "2026-08-17",

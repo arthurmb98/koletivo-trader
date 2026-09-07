@@ -15,6 +15,7 @@ from koletivo_trader.adapters.mt5.broker import Mt5Broker
 from koletivo_trader.adapters.mt5.session import (
     DEMO_PLAYBOOK,
     env_credentials,
+    redact_text,
     next_gold_window,
     resolve_symbol,
     session_wait_reason,
@@ -27,10 +28,10 @@ from koletivo_trader.domain.models import Candle, Position, SessionContext, Sign
 from koletivo_trader.domain.risk import RiskCalculator, contracts_for_bank, protect_levels, round_to_tick
 from koletivo_trader.domain.session import SessionFilter
 from koletivo_trader.ml.models import DaytradeModel, SwingModel, group_days
+from koletivo_trader.domain.product import CASE, LOOKBACK_M1, TIMEFRAME
 from koletivo_trader.paths import RESULTS_DIR
 
 CONFIG_NAME = "best_candles_m5_1000_a"
-LOOKBACK_M1 = 15
 
 
 def _today() -> date:
@@ -131,8 +132,8 @@ class LiveEngine:
                 "done": False,
                 "error": self.error,
                 "config": self.cfg.name,
-                "case": "last_candles",
-                "timeframe": "m5",
+                "case": CASE,
+                "timeframe": TIMEFRAME,
                 "source": "mt5",
                 "order_mode": self.order_mode.value,
                 "interval_sec": self.cfg.execution.in_position_poll_ms / 1000.0,
@@ -242,7 +243,7 @@ class LiveEngine:
             try:
                 self._pulse()
             except Exception as exc:  # noqa: BLE001
-                self.error = str(exc)
+                self.error = redact_text(str(exc))
                 self._reconnect()
             time.sleep(max(0.01, delay))
 
@@ -268,8 +269,8 @@ class LiveEngine:
         try:
             broker.connect(select_symbol=True, **env_credentials())
         except Exception as exc:  # noqa: BLE001
-            self.error = str(exc)
-            self.feed = {"ready": False, "error": str(exc)}
+            self.error = redact_text(str(exc))
+            self.feed = {"ready": False, "error": self.error}
             self.wait_reason = "aguardando_login"
             return False
         symbol = resolve_symbol(broker) or broker.symbol

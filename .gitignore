@@ -8,6 +8,10 @@ __pycache__/
 .env
 .env.*
 !.env.example
+*.pem
+secrets/
+credentials.json
+mt5.credentials
 journal/**
 !journal/.gitkeep
 ui/node_modules/

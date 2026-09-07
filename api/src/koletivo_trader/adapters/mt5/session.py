@@ -130,7 +130,11 @@ def _load_dotenv() -> None:
             os.environ[key] = value
 
 
+_SECRET_KEYS = frozenset({"password", "passwd", "senha", "token", "secret", "mt5_password"})
+
+
 def env_credentials() -> dict[str, str]:
+    """Login material for MetaTrader5.connect only. Do not persist or return this dict to the UI."""
     _load_dotenv()
     login = (os.environ.get("MT5_LOGIN") or "").strip()
     password = (os.environ.get("MT5_PASSWORD") or "").strip()
@@ -146,6 +150,17 @@ def env_credentials() -> dict[str, str]:
     if path:
         out["path"] = path
     return out
+
+
+def strip_secrets(data: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in data.items() if str(key).lower() not in _SECRET_KEYS}
+
+
+def redact_text(text: str) -> str:
+    secret = (os.environ.get("MT5_PASSWORD") or "").strip()
+    if secret and secret in text:
+        return text.replace(secret, "***")
+    return text
 
 
 def next_gold_window(now: datetime | None = None) -> str | None:
@@ -309,7 +324,7 @@ def probe() -> dict[str, Any]:
     try:
         broker.connect(select_symbol=False, **creds)
     except Exception as exc:  # noqa: BLE001
-        payload["error"] = str(exc)
+        payload["error"] = redact_text(str(exc))
         payload["wait_reason"] = "aguardando_login"
         return payload
     payload["connected"] = True
@@ -328,7 +343,7 @@ def probe() -> dict[str, Any]:
                 if candles:
                     payload["last_bar"] = candles[-1].timestamp.isoformat()
             except Exception as exc:  # noqa: BLE001
-                payload["error"] = str(exc)
+                payload["error"] = redact_text(str(exc))
             try:
                 payload["order_check"] = broker.check_order(
                     Signal(

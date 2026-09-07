@@ -13,6 +13,7 @@ from koletivo_trader.domain.models import Candle
 from koletivo_trader.ml.models import RECIPES, DaytradeModel, DaytradeRecipe, SwingModel, group_days
 from koletivo_trader.ml.parameters import ParamResult, prepare_eval, score_fixed, search_parameters
 from koletivo_trader.paths import CONFIGS_DIR, RESULTS_DIR, UI_PUBLIC
+from koletivo_trader.domain.product import BANKS, CASE, HORIZON_M5, LOOKBACK_M1, TIMEFRAME
 
 VAL_CUTOFF = date(2024, 7, 1)
 
@@ -55,7 +56,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
     print(f"Fit até {VAL_CUTOFF}: M1={len(m1_fit)} M5={len(m5_fit)} | val M1={len(m1_val)} M5={len(m5_val)}")
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    recipes = [item for item in RECIPES if item.name in {"ft_atr_gold", "momentum_meta", "unique_adapt"}]
+    recipes = [item for item in RECIPES if item.name == "ft_atr_gold"]
     extra = [
         DaytradeRecipe("ft_pts25_rr2", "first_touch_pts", delta_pts=25.0, stop_mult=0.8, gain_mult=1.6, min_score=0.38),
         DaytradeRecipe("mom_loose", "momentum_meta", stop_mult=1.2, gain_mult=2.2, min_score=0.42, momentum_cut=0.12),
@@ -165,6 +166,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         cfg,
         daytrade,
         swing,
+        banks=BANKS,
         n_trials=28,
         prepared=prepared_val,
     )
@@ -199,25 +201,26 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
                 best_val = val_c
         winners["1000"] = best_val
         oos["1000"] = score_fixed(prepared_test, cfg, best_val, 1000.0)
-        for bank in ("500", "5000"):
-            if bank in winners:
-                adj = winners[bank]
-                cand = ParamResult(
-                    winners["1000"].stop_points,
-                    winners["1000"].gain_points,
-                    winners["1000"].min_hit_pct,
-                    winners["1000"].swing_weight,
-                    winners["1000"].fib_weight,
-                    adj.bank,
-                    adj.contracts,
-                    0,
-                    0,
-                    0.0,
-                    0.0,
-                    0.0,
-                )
-                winners[bank] = score_fixed(prepared_val, cfg, cand, float(bank))
-                oos[bank] = score_fixed(prepared_test, cfg, cand, float(bank))
+        for bank in winners:
+            if bank == "1000":
+                continue
+            adj = winners[bank]
+            cand = ParamResult(
+                winners["1000"].stop_points,
+                winners["1000"].gain_points,
+                winners["1000"].min_hit_pct,
+                winners["1000"].swing_weight,
+                winners["1000"].fib_weight,
+                adj.bank,
+                adj.contracts,
+                0,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            )
+            winners[bank] = score_fixed(prepared_val, cfg, cand, float(bank))
+            oos[bank] = score_fixed(prepared_test, cfg, cand, float(bank))
 
     for bank, result in winners.items():
         path = CONFIGS_DIR / f"best_bank_{bank}.yaml"
@@ -261,7 +264,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
 
 def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe, ranked) -> dict:
     leaderboard = []
-    winners_node: dict = {"last_candles": {}}
+    winners_node: dict = {CASE: {}}
     screen = [
         {
             "recipe": r.name,
@@ -327,10 +330,10 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
         winner["params"]["data"] = {
             "train_csv": cfg.data.train_m5,
             "test_csv": cfg.data.test_m5,
-            "timeframe": "m5",
+            "timeframe": TIMEFRAME,
         }
         winner["params"]["execution"] = {"direction": "follow", "decision": "ml_guard", **cfg.execution.__dict__}
-        winners_node["last_candles"].setdefault(bank, {})["m5"] = [winner]
+        winners_node[CASE].setdefault(bank, {})[TIMEFRAME] = [winner]
         leaderboard.append(
             {
                 "net_pnl": result.net_pnl,
@@ -339,13 +342,14 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
                 "profit_factor": result.profit_factor,
             }
         )
+    leak = winners_node[CASE][next(iter(winners))][TIMEFRAME][0]["leakage"]
     return {
         "generated_at": __import__("datetime").datetime.now().isoformat(),
         "disclaimer": "Não é recomendação de investimento. Resultado passado não garante resultado futuro.",
         "how_it_works": [
             "O swing lê o pregão anterior (M5) e classifica o tipo de dia.",
-            "O daytrade lê 15 M1 em 3 blocos de 5 min (preço + volume) e decide compra, venda ou não fazer nada.",
-            "Swing e Fibonacci entram na fusão só se o peso for maior que zero. Ordem armada sai com stop e gain.",
+            "O daytrade usa 15 M1 só como contexto dos últimos candles de 5 min e decide compra, venda ou não fazer nada.",
+            "O tempo gráfico de operação é sempre 5 min, caso últimos candles. Só a banca muda o YAML.",
         ],
         "insights": {
             "worked": [
@@ -357,12 +361,30 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
             "recipe_screen": screen,
         },
         "parecer": {
-            "headline": "Robô Koletivo Trader: swing de contexto + daytrade de 15x1min.",
-            "ml_hit": {"m1": float(day_scores.get("train_acc", 0)), "m5": float(swing_scores.get("train_rows", 0))},
+            "headline": "Robô Koletivo Trader: M5, últimos candles, banca variável.",
+            "ml_hit": {
+                "daytrade": float(day_scores.get("train_acc", 0)),
+                "swing": float(swing_scores.get("train_rows", 0)),
+                "m1": float(day_scores.get("train_acc", 0)),
+                "m5": float(swing_scores.get("train_rows", 0)),
+            },
             "n_months_note": "Teste 2025–2026 (fora da amostra).",
+            "by_case": [
+                {
+                    "case": CASE,
+                    "bank": int(bank),
+                    "name": f"best_bank_{bank}",
+                    "timeframe": TIMEFRAME,
+                    "label": f"{int(result.stop_points)} / {int(result.gain_points)}",
+                    "avg_fixed": result.net_pnl,
+                    "avg_scaled": result.net_pnl,
+                    "n_months": 20,
+                }
+                for bank, result in winners.items()
+            ],
             "monthly": [],
             "strategy": [
-                "15 candles M1 → sinal para 3 M5",
+                "15 M1 de contexto → sinal no fechamento do M5",
                 "Stop e gain na ordem",
                 "Limite diário de trades e de perda",
             ],
@@ -376,23 +398,15 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
         },
         "instrument": {"name": "WIN$", "point_value": 0.2, "tick": 5, "contracts": 1},
         "banks": [int(k) for k in winners],
-        "cases": ["last_candles"],
-        "case_labels": {"last_candles": "Últimos 15 x 1 min"},
-        "lookback": {"m1": 15, "m5": 3},
-        "timeframes_list": ["m5"],
-        "timeframe_labels": {"m5": "5 min"},
+        "cases": [CASE],
+        "case_labels": {CASE: "Últimos candles"},
+        "lookback": {"m1": LOOKBACK_M1, "m5": HORIZON_M5},
+        "timeframes_list": [TIMEFRAME],
+        "timeframe_labels": {TIMEFRAME: "5 min"},
         "n_configs_total": len(winners),
         "timeframes": {
-            "m1": {
-                "leakage": winners_node["last_candles"][next(iter(winners))]["m5"][0]["leakage"],
-                "model_test": {
-                    "test_direction_hit": float(day_scores.get("train_acc", 0)),
-                    "test_mae_close": 0,
-                    "test_rmse_close": 0,
-                },
-            },
-            "m5": {
-                "leakage": winners_node["last_candles"][next(iter(winners))]["m5"][0]["leakage"],
+            TIMEFRAME: {
+                "leakage": leak,
                 "model_test": {
                     "test_direction_hit": float(day_scores.get("train_acc", 0)),
                     "test_mae_close": 0,
@@ -400,6 +414,6 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
                 },
             },
         },
-        "studies": {"last_candles": {"1000": {"n_configs": len(winners), "leaderboard": leaderboard}}},
+        "studies": {CASE: {"1000": {"n_configs": len(winners), "leaderboard": leaderboard}}},
         "winners": winners_node,
     }

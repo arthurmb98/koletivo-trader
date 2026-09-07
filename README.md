@@ -10,7 +10,7 @@ A ML lê o gráfico e estima a chance de atingir o gain antes do stop. Um **algo
 2. **Daytrade** (decisor) — a cada fechamento de M5 lê 15 candles de 1 min em 3 blocos de 5 min (preço + volume). Devolve lado, tipo do gráfico passado, tipo previsto para os próximos 15 min, e `%` de acerto.
 3. **Fusão** — o daytrade entra com o `%` cheio. Swing e Fibonacci só somam ou subtraem `peso × confiança`. Peso 0 = aquele decisor não existe. Daytrade nunca fica com menos de 60% de relevância (`swing_weight + fib_weight ≤ 0,4`).
 4. **Offset** — a entrada não precisa ser o fechamento do último candle. `offset_points = 0` entra no close; valores positivos ou negativos (tick de 5 pts) são escolhidos pelo AG.
-5. **AG** — população real-codificada (crossover SBX, mutação polinomial, elitismo, MLP só para acelerar o ranking). Fitness em walk-forward na validação 2024 H2. Teste 2025+ só reporta, não escolhe parâmetro. Grava YAML em `configs/best_bank_{500,1000,5000}.yaml`.
+5. **AG** — população real-codificada (crossover SBX, mutação polinomial, elitismo, MLP só para acelerar o ranking). Fitness em walk-forward na validação 2024 H2. Teste 2025+ só reporta, não escolhe parâmetro. Grava YAML em `configs/best_bank_{500,1000,5000,10000}.yaml`.
 
 Exemplo de fusão: daytrade 96% de compra, swing discorda a 80% com peso 0,2 → `0,96 + 0,2 × (−0,80) = 0,80`. O sinal continua se ainda estiver acima de `min_hit_pct`. Não há veto binário.
 
@@ -88,4 +88,4 @@ Sem `order_send` nos testes. Rótulos de treino não vazam o futuro para o X.
 
 ## Repo
 
-Público: [arthurmb98/koletivo-trader](https://github.com/arthurmb98/koletivo-trader), branch `staging`. `.env` e `journal/` gitignored.
+Público: [arthurmb98/koletivo-trader](https://github.com/arthurmb98/koletivo-trader), branch `staging`. `.env` e `journal/` gitignored. A senha do MT5 (`MT5_PASSWORD`) fica só no `.env` local e nunca vai ao Git.

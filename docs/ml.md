@@ -88,7 +88,7 @@ Não é Optuna. Não é uma terceira ML de sinal.
 ## Artefatos
 
 - `studies/results/model_daytrade.joblib`, `model_swing.joblib`
-- `configs/best_bank_{500,1000,5000}.yaml` — stop, gain, min_hit, pesos, offset
+- `configs/best_bank_{500,1000,5000,10000}.yaml` — stop, gain, min_hit, pesos, offset
 - `ui/public/studies.json` — página de estudo
 
 Não há `model_params` como “terceiro cérebro”. O joblib de params, se existir, é só metadado da última busca.
