@@ -1,0 +1,504 @@
+{
+  "generated_at": "2026-09-07T09:48:17.712055",
+  "disclaimer": "Não é recomendação de investimento. Resultado passado não garante resultado futuro.",
+  "how_it_works": [
+    "O swing lê o pregão anterior (M5) e classifica o tipo de dia.",
+    "O daytrade lê 15 candles de 1 min e decide compra, venda ou não fazer nada para os próximos 15 min.",
+    "Ordem armada sai a mercado com stop e gain já definidos. Perto do alvo o stop sobe para travar lucro."
+  ],
+  "insights": {
+    "worked": [
+      "Fusão swing + daytrade evita operar mercado atípico.",
+      "Stop/gain fixos na ordem."
+    ],
+    "failed": [
+      "Acerto direcional puro de regressão linear no trader-api era ~49%."
+    ],
+    "improve": [
+      "Recalibrar parâmetros por banca com a busca Optuna."
+    ]
+  },
+  "parecer": {
+    "headline": "Robô Koletivo Trader: swing de contexto + daytrade de 15x1min.",
+    "ml_hit": {
+      "m1": 0.6202,
+      "m5": 840.0
+    },
+    "n_months_note": "Teste 2025–2026.",
+    "monthly": [],
+    "strategy": [
+      "15 candles M1 → sinal para 3 M5",
+      "Stop e gain na ordem",
+      "Limite diário de trades e de perda"
+    ],
+    "dd_floor": "Drawdown comparado à banca da config."
+  },
+  "frozen_configs": [
+    "best_bank_500",
+    "best_bank_1000",
+    "best_bank_5000"
+  ],
+  "mt5": {
+    "ready": true,
+    "default_enabled": false,
+    "steps": [
+      "Abra o MT5 demo Genial/Clear",
+      "python -m koletivo_trader serve",
+      "npm run dev em ui/"
+    ]
+  },
+  "instrument": {
+    "name": "WIN$",
+    "point_value": 0.2,
+    "tick": 5,
+    "contracts": 1
+  },
+  "banks": [
+    500,
+    1000,
+    5000
+  ],
+  "cases": [
+    "last_candles"
+  ],
+  "case_labels": {
+    "last_candles": "Últimos 15 x 1 min"
+  },
+  "lookback": {
+    "m1": 15,
+    "m5": 3
+  },
+  "timeframes_list": [
+    "m5"
+  ],
+  "timeframe_labels": {
+    "m5": "5 min"
+  },
+  "n_configs_total": 3,
+  "timeframes": {
+    "m1": {
+      "leakage": {
+        "n_train": 40000,
+        "n_test_original": 0,
+        "n_removed": 0,
+        "n_test_clean": 0,
+        "removed_by_key": 0,
+        "removed_by_ohlc": 0,
+        "train_file": "datasets/WIN_5min_train.csv",
+        "test_file": "datasets/WIN_5min_test.csv",
+        "train_start": "2021-08-18",
+        "train_end": "2024-12-30",
+        "test_start": "2025-01-02",
+        "test_end": "2026-08-26"
+      },
+      "model_test": {
+        "test_direction_hit": 0.6202,
+        "test_mae_close": 0,
+        "test_rmse_close": 0
+      }
+    },
+    "m5": {
+      "leakage": {
+        "n_train": 40000,
+        "n_test_original": 0,
+        "n_removed": 0,
+        "n_test_clean": 0,
+        "removed_by_key": 0,
+        "removed_by_ohlc": 0,
+        "train_file": "datasets/WIN_5min_train.csv",
+        "test_file": "datasets/WIN_5min_test.csv",
+        "train_start": "2021-08-18",
+        "train_end": "2024-12-30",
+        "test_start": "2025-01-02",
+        "test_end": "2026-08-26"
+      },
+      "model_test": {
+        "test_direction_hit": 0.6202,
+        "test_mae_close": 0,
+        "test_rmse_close": 0
+      }
+    }
+  },
+  "studies": {
+    "last_candles": {
+      "1000": {
+        "n_configs": 3,
+        "leaderboard": [
+          {
+            "net_pnl": 0.0,
+            "n_trades": 0,
+            "win_rate": 0.0,
+            "profit_factor": 1.0
+          },
+          {
+            "net_pnl": 0.0,
+            "n_trades": 0,
+            "win_rate": 0.0,
+            "profit_factor": 1.0
+          },
+          {
+            "net_pnl": 0.0,
+            "n_trades": 0,
+            "win_rate": 0.0,
+            "profit_factor": 1.0
+          }
+        ]
+      }
+    }
+  },
+  "winners": {
+    "last_candles": {
+      "500": {
+        "m5": [
+          {
+            "name": "best_bank_500",
+            "params": {
+              "name": "best_bank_500",
+              "account": {
+                "initial_bank": 500.0,
+                "contracts": 1,
+                "point_value": 0.2,
+                "contract_cost": 1.0
+              },
+              "instrument": {
+                "symbol": "WIN$",
+                "tick_size": 5
+              },
+              "data": {
+                "train_csv": "datasets/WIN_5min_train.csv",
+                "test_csv": "datasets/WIN_5min_test.csv",
+                "timeframe": "m5"
+              },
+              "risk": {
+                "mode": "fixed",
+                "stop_points": 120.0,
+                "gain_points": 200.0,
+                "rr_ratio": 2.0,
+                "atr_period": 14,
+                "trailing_enabled": true,
+                "trailing_trigger_points": 60.0,
+                "trailing_distance_points": 50.0,
+                "be_trigger_points": 25.0,
+                "be_lock_points": 10.0,
+                "invalidate_tp_points": 30.0,
+                "daily_loss_points": 0.0,
+                "max_trades_per_day": 8
+              },
+              "filters": {
+                "session_start": "09:15",
+                "session_end": "17:00",
+                "skip_lunch": true,
+                "lunch_start": "11:00",
+                "lunch_end": "14:30",
+                "gold_hours_only": true,
+                "min_hit_pct": 0.62,
+                "swing_weight": 0.15,
+                "first_block_minutes": 15
+              },
+              "execution": {
+                "direction": "follow",
+                "decision": "ml_guard",
+                "entry_mode": "market_open",
+                "max_tick_age_ms": 1500,
+                "in_position_poll_ms": 20,
+                "idle_poll_ms": 100,
+                "sl_modify_min_ms": 150
+              },
+              "ml": {
+                "min_train_rows": 200,
+                "daytrade_lookback_m1": 15,
+                "horizon_m5": 3
+              },
+              "mt5": {
+                "enabled": false,
+                "symbol": "WIN$",
+                "magic": 20260907,
+                "deviation": 20,
+                "filling": "IOC",
+                "comment": "koletivo-trader"
+              }
+            },
+            "score": 0.0,
+            "leakage": {
+              "n_train": 40000,
+              "n_test_original": 0,
+              "n_removed": 0,
+              "n_test_clean": 0,
+              "removed_by_key": 0,
+              "removed_by_ohlc": 0,
+              "train_file": "datasets/WIN_5min_train.csv",
+              "test_file": "datasets/WIN_5min_test.csv",
+              "train_start": "2021-08-18",
+              "train_end": "2024-12-30",
+              "test_start": "2025-01-02",
+              "test_end": "2026-08-26"
+            },
+            "metrics": {
+              "n_candles": 0,
+              "n_trades": 0,
+              "n_wins": 0,
+              "n_losses": 0,
+              "win_rate": 0.0,
+              "net_pnl": 0.0,
+              "final_bank": 500.0,
+              "initial_bank": 500.0,
+              "avg_win": 0,
+              "avg_loss": 0,
+              "median_win": 0,
+              "median_loss": 0,
+              "avg_points_win": 200.0,
+              "avg_points_loss": 120.0,
+              "profit_factor": 1.0,
+              "max_drawdown": 0.0,
+              "max_drawdown_pct": 0.0,
+              "expectancy": 0.0,
+              "trades_per_candle_pct": 0.0,
+              "hourly": {},
+              "equity": [],
+              "trades": []
+            },
+            "trades": [],
+            "model_test": {
+              "test_direction_hit": 0.6202,
+              "test_mae_close": 0
+            }
+          }
+        ]
+      },
+      "1000": {
+        "m5": [
+          {
+            "name": "best_bank_1000",
+            "params": {
+              "name": "best_bank_1000",
+              "account": {
+                "initial_bank": 1000.0,
+                "contracts": 1,
+                "point_value": 0.2,
+                "contract_cost": 1.0
+              },
+              "instrument": {
+                "symbol": "WIN$",
+                "tick_size": 5
+              },
+              "data": {
+                "train_csv": "datasets/WIN_5min_train.csv",
+                "test_csv": "datasets/WIN_5min_test.csv",
+                "timeframe": "m5"
+              },
+              "risk": {
+                "mode": "fixed",
+                "stop_points": 120.0,
+                "gain_points": 200.0,
+                "rr_ratio": 2.0,
+                "atr_period": 14,
+                "trailing_enabled": true,
+                "trailing_trigger_points": 60.0,
+                "trailing_distance_points": 50.0,
+                "be_trigger_points": 25.0,
+                "be_lock_points": 10.0,
+                "invalidate_tp_points": 30.0,
+                "daily_loss_points": 0.0,
+                "max_trades_per_day": 8
+              },
+              "filters": {
+                "session_start": "09:15",
+                "session_end": "17:00",
+                "skip_lunch": true,
+                "lunch_start": "11:00",
+                "lunch_end": "14:30",
+                "gold_hours_only": true,
+                "min_hit_pct": 0.62,
+                "swing_weight": 0.15,
+                "first_block_minutes": 15
+              },
+              "execution": {
+                "direction": "follow",
+                "decision": "ml_guard",
+                "entry_mode": "market_open",
+                "max_tick_age_ms": 1500,
+                "in_position_poll_ms": 20,
+                "idle_poll_ms": 100,
+                "sl_modify_min_ms": 150
+              },
+              "ml": {
+                "min_train_rows": 200,
+                "daytrade_lookback_m1": 15,
+                "horizon_m5": 3
+              },
+              "mt5": {
+                "enabled": false,
+                "symbol": "WIN$",
+                "magic": 20260907,
+                "deviation": 20,
+                "filling": "IOC",
+                "comment": "koletivo-trader"
+              }
+            },
+            "score": 0.0,
+            "leakage": {
+              "n_train": 40000,
+              "n_test_original": 0,
+              "n_removed": 0,
+              "n_test_clean": 0,
+              "removed_by_key": 0,
+              "removed_by_ohlc": 0,
+              "train_file": "datasets/WIN_5min_train.csv",
+              "test_file": "datasets/WIN_5min_test.csv",
+              "train_start": "2021-08-18",
+              "train_end": "2024-12-30",
+              "test_start": "2025-01-02",
+              "test_end": "2026-08-26"
+            },
+            "metrics": {
+              "n_candles": 0,
+              "n_trades": 0,
+              "n_wins": 0,
+              "n_losses": 0,
+              "win_rate": 0.0,
+              "net_pnl": 0.0,
+              "final_bank": 1000.0,
+              "initial_bank": 1000.0,
+              "avg_win": 0,
+              "avg_loss": 0,
+              "median_win": 0,
+              "median_loss": 0,
+              "avg_points_win": 200.0,
+              "avg_points_loss": 120.0,
+              "profit_factor": 1.0,
+              "max_drawdown": 0.0,
+              "max_drawdown_pct": 0.0,
+              "expectancy": 0.0,
+              "trades_per_candle_pct": 0.0,
+              "hourly": {},
+              "equity": [],
+              "trades": []
+            },
+            "trades": [],
+            "model_test": {
+              "test_direction_hit": 0.6202,
+              "test_mae_close": 0
+            }
+          }
+        ]
+      },
+      "5000": {
+        "m5": [
+          {
+            "name": "best_bank_5000",
+            "params": {
+              "name": "best_bank_5000",
+              "account": {
+                "initial_bank": 5000.0,
+                "contracts": 1,
+                "point_value": 0.2,
+                "contract_cost": 1.0
+              },
+              "instrument": {
+                "symbol": "WIN$",
+                "tick_size": 5
+              },
+              "data": {
+                "train_csv": "datasets/WIN_5min_train.csv",
+                "test_csv": "datasets/WIN_5min_test.csv",
+                "timeframe": "m5"
+              },
+              "risk": {
+                "mode": "fixed",
+                "stop_points": 120.0,
+                "gain_points": 200.0,
+                "rr_ratio": 2.0,
+                "atr_period": 14,
+                "trailing_enabled": true,
+                "trailing_trigger_points": 60.0,
+                "trailing_distance_points": 50.0,
+                "be_trigger_points": 25.0,
+                "be_lock_points": 10.0,
+                "invalidate_tp_points": 30.0,
+                "daily_loss_points": 0.0,
+                "max_trades_per_day": 8
+              },
+              "filters": {
+                "session_start": "09:15",
+                "session_end": "17:00",
+                "skip_lunch": true,
+                "lunch_start": "11:00",
+                "lunch_end": "14:30",
+                "gold_hours_only": true,
+                "min_hit_pct": 0.62,
+                "swing_weight": 0.15,
+                "first_block_minutes": 15
+              },
+              "execution": {
+                "direction": "follow",
+                "decision": "ml_guard",
+                "entry_mode": "market_open",
+                "max_tick_age_ms": 1500,
+                "in_position_poll_ms": 20,
+                "idle_poll_ms": 100,
+                "sl_modify_min_ms": 150
+              },
+              "ml": {
+                "min_train_rows": 200,
+                "daytrade_lookback_m1": 15,
+                "horizon_m5": 3
+              },
+              "mt5": {
+                "enabled": false,
+                "symbol": "WIN$",
+                "magic": 20260907,
+                "deviation": 20,
+                "filling": "IOC",
+                "comment": "koletivo-trader"
+              }
+            },
+            "score": 0.0,
+            "leakage": {
+              "n_train": 40000,
+              "n_test_original": 0,
+              "n_removed": 0,
+              "n_test_clean": 0,
+              "removed_by_key": 0,
+              "removed_by_ohlc": 0,
+              "train_file": "datasets/WIN_5min_train.csv",
+              "test_file": "datasets/WIN_5min_test.csv",
+              "train_start": "2021-08-18",
+              "train_end": "2024-12-30",
+              "test_start": "2025-01-02",
+              "test_end": "2026-08-26"
+            },
+            "metrics": {
+              "n_candles": 0,
+              "n_trades": 0,
+              "n_wins": 0,
+              "n_losses": 0,
+              "win_rate": 0.0,
+              "net_pnl": 0.0,
+              "final_bank": 5000.0,
+              "initial_bank": 5000.0,
+              "avg_win": 0,
+              "avg_loss": 0,
+              "median_win": 0,
+              "median_loss": 0,
+              "avg_points_win": 200.0,
+              "avg_points_loss": 120.0,
+              "profit_factor": 1.0,
+              "max_drawdown": 0.0,
+              "max_drawdown_pct": 0.0,
+              "expectancy": 0.0,
+              "trades_per_candle_pct": 0.0,
+              "hourly": {},
+              "equity": [],
+              "trades": []
+            },
+            "trades": [],
+            "model_test": {
+              "test_direction_hit": 0.6202,
+              "test_mae_close": 0
+            }
+          }
+        ]
+      }
+    }
+  }
+}

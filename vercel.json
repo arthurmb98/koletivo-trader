@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "npm --prefix ui install",
+  "buildCommand": "npm --prefix ui run build",
+  "outputDirectory": "ui/dist",
+  "rewrites": [
+    { "source": "/favicon.ico", "destination": "/brand/logo-branco.png" },
+    { "source": "/live", "destination": "/index.html" },
+    { "source": "/replay", "destination": "/index.html" },
+    { "source": "/ao-vivo", "destination": "/index.html" }
+  ]
+}
