@@ -11,9 +11,9 @@ const WAIT_LABEL: Record<string, string> = {
   conta_real: 'Conta real — simulando paper, sem envio no MT5',
   sem_simbolo: 'Sem WIN negociável no Market Watch (WINV26 + WIN$)',
   autotrading_desligado: 'AutoTrading desligado — o motor tenta religar sozinho no terminal Genial',
-  mercado_fechado: 'ARMADO · fora do pregão. Espera o próximo ouro (09:15) e opera sozinho',
-  fora_do_ouro: 'ARMADO · almoço / fora do ouro. Espera 09:15–11:00 ou 14:30–17:00 e opera sozinho',
-  fim_da_sessao: 'Sessão encerrada às 17:00',
+  mercado_fechado: 'ARMADO · fora do pregão. Espera o próximo ouro (sinais 09:10–11:05 e 14:25–17:05)',
+  fora_do_ouro: 'ARMADO · almoço / fora do ouro. Sinais 5 min antes e 5 min depois (09:10–11:05 e 14:25–17:05)',
+  fim_da_sessao: 'Sessão encerrada após 17:05',
   em_posicao: 'Posição aberta',
   aguardando_candle: 'Pregão aberto. Aguardando M5 do MT5',
   pronto: 'Pregão aberto. Aguardando o próximo sinal',
@@ -501,14 +501,16 @@ export function AoVivoPage() {
         ) : null}
         {prod ? (
           <p className="mt-3 text-sm text-loss">
-            Produção envia ordem real no Genial PRD no próximo sinal válido (09:15–11:00 e 14:30–17:00, não FLAT). O
+            Produção envia ordem real no Genial PRD no próximo sinal válido (09:10–11:05 e 14:25–17:05). O
             motor mantém o AutoTrading ligado.
           </p>
         ) : null}
         {snap.error && !snap.error.startsWith('Stream sem candles') ? (
           <p className="mt-3 text-sm text-loss">{snap.error}</p>
         ) : null}
-        {snap.skip_reason ? <p className="mt-3 text-sm text-amber-400">{snap.skip_reason}</p> : null}
+        {snap.skip_reason && wait !== 'mercado_fechado' && wait !== 'fora_do_ouro' ? (
+          <p className="mt-3 text-sm text-amber-400">{snap.skip_reason}</p>
+        ) : null}
         {wait === 'aguardando_login' && snap.playbook ? (
           <pre className="mt-4 max-w-3xl overflow-x-auto whitespace-pre-wrap rounded-2xl border border-border bg-elevated/50 p-4 text-sm text-muted-foreground">
             {snap.playbook}

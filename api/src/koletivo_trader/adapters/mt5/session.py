@@ -6,12 +6,13 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from typing import Any
 
 from koletivo_trader.adapters.config import load_named_config
 from koletivo_trader.domain.enums import ChartType, Side
 from koletivo_trader.domain.models import Signal
-from koletivo_trader.domain.session import GOLD_WINDOWS, SessionFilter
+from koletivo_trader.domain.session import GOLD_WINDOWS, LIVE_SIGNAL_PAD_MINUTES, SessionFilter
 
 WIN_MONTH_CODE = {
     1: "F",
@@ -46,8 +47,9 @@ DEMO_SERVERS = (
 
 DEMO_PLAYBOOK = """WIN na B3: deixe o MT5 da Genial aberto e já logado na DEMO.
 
-  1. Terminal Genial (ou Clear) logado — canto inferior direito com o número da conta demo.
-  2. Ferramentas -> Opções -> Expert Advisors: permitir Algo Trading. AutoTrading verde.
+  1. Terminal Genial (ou Clear) logado — canto inferior direito com o número da conta demo (não PRD/real).
+  2. Ferramentas -> Opções -> Expert Advisors: permitir Algo Trading E a API/Python.
+     AutoTrading verde. Sem a API Python o initialize falha com Authorization failed (-6).
   3. Market Watch: vencimento da frente (WINV26 em ago/2026) e WIN$ se existir.
      Abra um gráfico M5 desse contrato.
   4. Python e MT5 no mesmo usuário Windows (os dois sem 'Executar como administrador').
@@ -55,6 +57,11 @@ DEMO_PLAYBOOK = """WIN na B3: deixe o MT5 da Genial aberto e já logado na DEMO.
 
 Login e senha no .env são opcionais se o terminal já está logado. Não commite. Conta real é recusada.
 """
+
+DEFAULT_TERMINAL_PATHS = (
+    r"C:\Program Files\MetaTrader 5\terminal64.exe",
+    r"C:\Program Files (x86)\MetaTrader 5\terminal64.exe",
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +91,97 @@ def server_looks_demo(name: str) -> bool:
     if not key or "PRD" in key or "REAL" in key:
         return False
     return "DEMO" in key
+
+
+def initialize_kwargs_attempts(path: str | None, timeout: int = 20_000) -> list[dict[str, Any]]:
+    """Attach to the running terminal first; path only if we need to launch one."""
+    attempts: list[dict[str, Any]] = [{"timeout": timeout}]
+    seen: set[str] = set()
+    for candidate in ((path or "").strip(), *DEFAULT_TERMINAL_PATHS):
+        key = candidate.replace("/", "\\").strip()
+        if not key:
+            continue
+        folded = key.lower()
+        if folded in seen or not Path(key).exists():
+            continue
+        seen.add(folded)
+        attempts.append({"timeout": timeout, "path": key})
+    return attempts
+
+
+def _read_text(path: Path) -> str:
+    data = path.read_bytes()
+    if data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff"):
+        return data.decode("utf-16")
+    for encoding in ("utf-8-sig", "utf-8", "cp1252"):
+        try:
+            return data.decode(encoding)
+        except UnicodeError:
+            continue
+    return data.decode("utf-8", errors="ignore")
+
+
+def python_api_disabled() -> bool | None:
+    """True when every local MT5 profile has Experts Api=0 (Python IPC off)."""
+    root = Path(os.environ.get("APPDATA") or "") / "MetaQuotes" / "Terminal"
+    if not root.is_dir():
+        return None
+    flags: list[bool] = []
+    for ini in root.glob("*/config/common.ini"):
+        text = _read_text(ini)
+        compact = text.replace(" ", "")
+        if "Api=" not in compact:
+            continue
+        flags.append("Api=1" in compact)
+    if not flags:
+        return None
+    return not any(flags)
+
+
+def mt5_window_titles() -> list[str]:
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    titles: list[str] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def enum_cb(hwnd: int, _lparam: int) -> bool:
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        buf = ctypes.create_unicode_buffer(512)
+        user32.GetWindowTextW(hwnd, buf, 512)
+        text = buf.value or ""
+        if "MetaTrader" in text or "Genial" in text or "Clear" in text:
+            titles.append(text)
+        return True
+
+    user32.EnumWindows(enum_cb, 0)
+    return titles
+
+
+def window_looks_prd() -> bool:
+    return any(("PRD" in title.upper() or "REAL" in title.upper()) for title in mt5_window_titles())
+
+
+def describe_initialize_failure(err: Any) -> str:
+    raw = str(err)
+    parts = [f"MT5 initialize falhou: {err}."]
+    if python_api_disabled():
+        parts.append(
+            "A API Python está desligada no terminal: Ferramentas → Opções → Expert Advisors "
+            "→ permitir Algo Trading e a integração Python/API."
+        )
+    elif "-6" in raw or "Authorization failed" in raw:
+        parts.append(
+            "Authorization failed (-6) costuma ser API Python desligada, AutoTrading off, "
+            "ou Python/MT5 com usuário ou 'Executar como administrador' diferentes."
+        )
+    if window_looks_prd():
+        parts.append("O terminal aberto está em servidor PRD/real — o ao vivo só envia ordem na demo.")
+    return " ".join(parts)
 
 
 def preferred_win_symbols(today: date | None = None) -> list[str]:
@@ -165,18 +263,24 @@ def redact_text(text: str) -> str:
 
 def next_gold_window(now: datetime | None = None) -> str | None:
     clock = now or datetime.now()
-    windows = [(time(int(a[:2]), int(a[3:5])), time(int(b[:2]), int(b[3:5]))) for a, b in GOLD_WINDOWS]
+    pad = timedelta(minutes=LIVE_SIGNAL_PAD_MINUTES)
+    windows = []
+    for a, b in GOLD_WINDOWS:
+        start = datetime.combine(clock.date(), time(int(a[:2]), int(a[3:5]))) - pad
+        end = datetime.combine(clock.date(), time(int(b[:2]), int(b[3:5]))) + pad
+        windows.append((start.time(), end.time()))
     weekday = clock.weekday()
+    morning = (datetime.combine(clock.date(), time(9, 15)) - pad).time()
     if weekday >= 5:
         days = 7 - weekday
-        nxt = datetime.combine(clock.date() + timedelta(days=days), time(9, 15))
+        nxt = datetime.combine(clock.date() + timedelta(days=days), morning)
         return nxt.isoformat(timespec="minutes")
     for start, end in windows:
         if start <= clock.time() <= end:
             return None
         if clock.time() < start:
             return datetime.combine(clock.date(), start).isoformat(timespec="minutes")
-    nxt = datetime.combine(clock.date() + timedelta(days=1), time(9, 15))
+    nxt = datetime.combine(clock.date() + timedelta(days=1), morning)
     while nxt.weekday() >= 5:
         nxt += timedelta(days=1)
     return nxt.isoformat(timespec="minutes")
@@ -198,22 +302,22 @@ def session_wait_reason(
         return "aguardando_login"
     if not account:
         return "aguardando_login"
-    if demo is False:
-        return "conta_real"
     if not symbol:
         return "sem_simbolo"
-    if not trade_allowed:
-        return "autotrading_desligado"
     if now.weekday() >= 5:
         return "mercado_fechado"
     if now.time() < time(9, 0) or now.time() >= time(18, 25):
         return "mercado_fechado"
-    if session.flatten_day(now):
-        return "fim_da_sessao"
     if in_position:
         return "em_posicao"
-    if not session.allows(now):
+    if not session.allows_live(now):
+        if now.time() >= session.end:
+            return "fim_da_sessao"
         return "fora_do_ouro"
+    if demo is False:
+        return "conta_real"
+    if not trade_allowed:
+        return "autotrading_desligado"
     if last_bar is None:
         return "aguardando_candle"
     if not bar_is_fresh(last_bar, now):

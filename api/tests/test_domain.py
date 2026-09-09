@@ -24,6 +24,21 @@ def test_gold_hours_run_until_17() -> None:
     assert not flt.allows(day.replace(hour=17, minute=5))
 
 
+def test_live_signal_window_pads_gold_by_five_minutes() -> None:
+    from koletivo_trader.domain.session import SessionFilter
+
+    flt = SessionFilter()
+    day = datetime(2026, 9, 9)
+    assert not flt.allows(day.replace(hour=9, minute=10))
+    assert flt.allows_live(day.replace(hour=9, minute=10))
+    assert flt.allows_live(day.replace(hour=11, minute=5))
+    assert not flt.allows_live(day.replace(hour=11, minute=6))
+    assert flt.allows_live(day.replace(hour=14, minute=25))
+    assert flt.allows_live(day.replace(hour=17, minute=5))
+    assert not flt.allows_live(day.replace(hour=17, minute=6))
+    assert not flt.allows_live(day.replace(hour=12, minute=0))
+
+
 def test_contracts_for_bank() -> None:
     assert contracts_for_bank(500) == 1
     assert contracts_for_bank(1000) == 1

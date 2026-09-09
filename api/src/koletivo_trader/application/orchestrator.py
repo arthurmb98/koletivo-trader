@@ -30,6 +30,8 @@ from koletivo_trader.ml.models import DaytradeModel, SwingModel, group_days
 from koletivo_trader.domain.product import CASE, LOOKBACK_M1, TIMEFRAME
 from koletivo_trader.paths import RESULTS_DIR
 
+OFF_GOLD_POLL_SEC = 5.0
+
 
 def _today() -> date:
     return datetime.now().date()
@@ -89,6 +91,7 @@ class LiveEngine:
         self._ledger_open: float | None = None
         self.open_pnl = 0.0
         self.feed: dict[str, Any] = {"ready": False}
+        self._broker_retry_at = 0.0
 
     def _load_models(self) -> None:
         day_path = RESULTS_DIR / "model_daytrade.joblib"
@@ -240,17 +243,21 @@ class LiveEngine:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            in_pos = self.position is not None
-            delay = (
-                self.cfg.execution.in_position_poll_ms / 1000.0
-                if in_pos
-                else self.cfg.execution.idle_poll_ms / 1000.0
-            )
             try:
                 self._pulse()
             except Exception as exc:  # noqa: BLE001
                 self.error = redact_text(str(exc))
+                if "copy_rates" in (self.error or ""):
+                    time.sleep(OFF_GOLD_POLL_SEC)
+                    continue
                 self._reconnect()
+            now = datetime.now()
+            if self.position is not None:
+                delay = self.cfg.execution.in_position_poll_ms / 1000.0
+            elif self.session.allows_live(now):
+                delay = self.cfg.execution.idle_poll_ms / 1000.0
+            else:
+                delay = OFF_GOLD_POLL_SEC
             time.sleep(max(0.01, delay))
 
     def _reconnect(self) -> None:
@@ -265,6 +272,8 @@ class LiveEngine:
     def _ensure_broker(self) -> bool:
         if self.broker is not None:
             return True
+        if time.monotonic() < self._broker_retry_at:
+            return False
         broker = Mt5Broker(
             self.cfg.mt5.symbol,
             self.cfg.mt5.magic,
@@ -278,6 +287,13 @@ class LiveEngine:
             self.error = redact_text(str(exc))
             self.feed = {"ready": False, "error": self.error}
             self.wait_reason = "aguardando_login"
+            self._broker_retry_at = time.monotonic() + 5.0
+            try:
+                import MetaTrader5 as mt5
+
+                mt5.shutdown()
+            except Exception:  # noqa: BLE001
+                pass
             return False
         symbol = resolve_symbol(broker) or broker.symbol
         broker.use_symbol(symbol)
@@ -289,7 +305,12 @@ class LiveEngine:
     def _closed(self, timeframe: str, count: int) -> list[Candle]:
         if self.broker is None:
             return []
-        return self.broker.last_closed_candles(self.symbol, timeframe, count)
+        try:
+            return self.broker.last_closed_candles(self.symbol, timeframe, count)
+        except RuntimeError as exc:
+            if "copy_rates" not in str(exc):
+                raise
+            return []
 
     def _limits_ok(self) -> str | None:
         today_trades = [t for t in self.trades if t.entry_time.date() == _today()]
@@ -347,8 +368,9 @@ class LiveEngine:
             session=self.session,
         )
         if self.order_mode is OrderMode.MT5 and acc.get("demo") is False:
-            self.wait_reason = "conta_real"
-        if self.context is None:
+            if self.session.allows_live(now):
+                self.wait_reason = "conta_real"
+        if self.context is None and (in_pos or self.session.allows_live(now)):
             self.arm_session()
             if self._mt5_payload.get("balance") is not None:
                 self._ledger_open = float(self._mt5_payload["balance"])
@@ -372,6 +394,11 @@ class LiveEngine:
             return
         if not self.armed:
             return
+        if not self.session.allows_live(now):
+            self.skip_reason = None
+            self.error = None
+            return
+        self.error = None
         m5 = self._closed("m5", 24)
         if not m5:
             self.wait_reason = "aguardando_candle"
@@ -396,7 +423,7 @@ class LiveEngine:
         if getattr(self.daytrade.recipe, "morning_only", False) and entry_ts.hour >= 11:
             self.skip_reason = "morning_only"
             return
-        if not self.session.allows(entry_ts):
+        if not self.session.allows_live(entry_ts):
             self.skip_reason = "fora_da_sessao"
             return
         m1 = self._closed("m1", LOOKBACK_M1 + 30)

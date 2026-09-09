@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 
 
 GOLD_WINDOWS = (("09:15", "11:00"), ("14:30", "17:00"))
+LIVE_SIGNAL_PAD_MINUTES = 5
 
 
 def _parse_hhmm(value: str) -> time:
     hour, minute = value.split(":")[:2]
     return time(int(hour), int(minute))
+
+
+def _shift_time(day: date, clock: time, minutes: int) -> time:
+    return (datetime.combine(day, clock) + timedelta(minutes=minutes)).time()
 
 
 class SessionFilter:
@@ -41,15 +46,28 @@ class SessionFilter:
             flt.gold_hours_only,
         )
 
-    def allows(self, ts: datetime) -> bool:
+    def allows(self, ts: datetime, *, pad_minutes: int = 0) -> bool:
         clock = ts.time()
-        if not (self.start <= clock <= self.end):
+        day = ts.date()
+        start = _shift_time(day, self.start, -pad_minutes)
+        end = _shift_time(day, self.end, pad_minutes)
+        if not (start <= clock <= end):
             return False
-        if self.skip_lunch and self.lunch_start <= clock < self.lunch_end:
-            return False
-        if self.gold_only and not any(a <= clock <= b for a, b in self.gold):
+        if self.skip_lunch:
+            lunch_a = _shift_time(day, self.lunch_start, pad_minutes)
+            lunch_b = _shift_time(day, self.lunch_end, -pad_minutes)
+            in_lunch = lunch_a < clock < lunch_b if pad_minutes else self.lunch_start <= clock < self.lunch_end
+            if in_lunch:
+                return False
+        if self.gold_only and not any(
+            _shift_time(day, a, -pad_minutes) <= clock <= _shift_time(day, b, pad_minutes) for a, b in self.gold
+        ):
             return False
         return True
+
+    def allows_live(self, ts: datetime) -> bool:
+        """Ao vivo: ouro ± 5 min. Treino e replay continuam no `allows()` exato."""
+        return self.allows(ts, pad_minutes=LIVE_SIGNAL_PAD_MINUTES)
 
     def flatten_day(self, ts: datetime) -> bool:
         return ts.time() >= self.end

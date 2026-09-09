@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
 from koletivo_trader.adapters.mt5.session import (
     DEMO_SERVERS,
     SymbolCandidate,
+    describe_initialize_failure,
     enable_algo_trading,
+    initialize_kwargs_attempts,
     server_looks_demo,
     strip_secrets,
 )
@@ -59,19 +60,18 @@ class Mt5Broker(Broker):
             if select_symbol:
                 self._select_symbol()
             return
-        kwargs: dict[str, Any] = {"timeout": 20_000}
-        if path:
-            kwargs["path"] = path
-        else:
-            for candidate in (
-                r"C:\Program Files\MetaTrader 5\terminal64.exe",
-                r"C:\Program Files (x86)\MetaTrader 5\terminal64.exe",
-            ):
-                if Path(candidate).exists():
-                    kwargs["path"] = candidate
-                    break
-        if not mt5.initialize(**kwargs):
-            raise RuntimeError(f"MT5 initialize falhou: {mt5.last_error()}")
+        last_err = None
+        ok = False
+        for kwargs in initialize_kwargs_attempts(path):
+            mt5.shutdown()
+            if mt5.initialize(**kwargs):
+                ok = True
+                last_err = None
+                break
+            last_err = mt5.last_error()
+            mt5.shutdown()
+        if not ok:
+            raise RuntimeError(describe_initialize_failure(last_err))
         self._mt5 = mt5
         acc = mt5.account_info()
         if acc is None and login and password:
