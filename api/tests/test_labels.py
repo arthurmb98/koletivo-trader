@@ -42,12 +42,26 @@ def test_windows_do_not_put_future_m5_into_x() -> None:
     t0 = datetime(2026, 3, 13, 9, 0)
     m1 = [_c(t0 + timedelta(minutes=i), 100 + i, 101 + i, 99 + i, 100 + i) for i in range(40)]
     m5 = [_c(t0 + timedelta(minutes=i * 5), 100, 110, 90, 105) for i in range(8)]
-    windows = leak_free_windows(m1, m5, lookback=15, horizon=3)
+    windows = leak_free_windows(m1, m5, lookback=3, horizon=3)
     assert windows
     window, future, entry = windows[0]
     assert window[-1].timestamp < future[0].timestamp
     assert entry.timestamp == future[0].timestamp
     assert all(c.timestamp not in {b.timestamp for b in future} for c in window)
+
+
+def test_future_m1_chart_is_fifteen_one_minute_bars() -> None:
+    from koletivo_trader.ml.labels import future_m1_chart
+
+    t0 = datetime(2026, 3, 13, 9, 0)
+    m1 = [_c(t0 + timedelta(minutes=i), 100 + i, 101 + i, 99 + i, 100 + i) for i in range(40)]
+    start = t0 + timedelta(minutes=20)
+    path = future_m1_chart(m1, start, n=15)
+    assert len(path) == 15
+    assert path[0].timestamp == start
+    deltas = [(path[i].timestamp - path[i - 1].timestamp).total_seconds() for i in range(1, 15)]
+    assert deltas == [60] * 14
+    assert future_m1_chart(m1, t0 + timedelta(minutes=30), n=15) == []
 
 
 def test_same_day_m1_is_future_only() -> None:
@@ -62,18 +76,18 @@ def test_same_day_m1_is_future_only() -> None:
     assert len(path) == 15
 
 
-def test_daytrade_features_use_blocks_and_volume() -> None:
+def test_daytrade_features_use_m5_bars_and_volume() -> None:
     import numpy as np
 
-    from koletivo_trader.ml.features import BLOCK_OHLC_VOL_DIM, VOL_SIG_DIM, daytrade_features, m1_block_vectors
+    from koletivo_trader.ml.features import M5_OHLC_VOL_DIM, VOL_SIG_DIM, daytrade_features, m5_bar_vectors
 
     t0 = datetime(2026, 3, 13, 9, 0)
     window = [
-        Candle("WIN$", t0 + timedelta(minutes=i), 100 + i, 102 + i, 99 + i, 101 + i, 1000 + i * 80)
-        for i in range(15)
+        Candle("WIN$", t0 + timedelta(minutes=i * 5), 100 + i, 102 + i, 99 + i, 101 + i, 1000 + i * 80)
+        for i in range(3)
     ]
-    blocks = m1_block_vectors(window)
-    assert blocks.shape == (BLOCK_OHLC_VOL_DIM,)
+    bars = m5_bar_vectors(window)
+    assert bars.shape == (M5_OHLC_VOL_DIM,)
     feats = daytrade_features(window)
-    assert feats.shape[0] > BLOCK_OHLC_VOL_DIM + VOL_SIG_DIM
+    assert feats.shape[0] > M5_OHLC_VOL_DIM + VOL_SIG_DIM
     assert not np.isnan(feats).any()

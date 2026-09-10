@@ -97,7 +97,7 @@ def adaptive_barriers(
     stop_cap: float = 120.0,
     gain_cap: float = 240.0,
 ) -> tuple[float, float]:
-    """ATR of 1-min window, snapped to 5-point ticks, floor for WIN mini ops."""
+    """ATR of the 3-M5 window, snapped to 5-point ticks, floor for WIN mini ops."""
     atr = atr_points(window)
     stop = max(stop_floor, round(atr * stop_mult / 5.0) * 5.0)
     gain = max(stop * 1.5, round(atr * gain_mult / 5.0) * 5.0)
@@ -132,28 +132,38 @@ def same_day_m1(
     return out
 
 
-def leak_free_windows(
+def future_m1_chart(
     m1: list[Candle],
+    start: datetime,
+    *,
+    index: dict | None = None,
+    n: int = 15,
+) -> list[Candle]:
+    """Next n M1 bars (same day) used as Y for predicted_chart_type. Empty if short."""
+    path = same_day_m1(m1, start, index=index, n=n)
+    return path if len(path) == n else []
+
+
+def leak_free_windows(
+    m1: list[Candle] | None,
     m5: list[Candle],
     *,
-    lookback: int = 15,
+    lookback: int = 3,
     horizon: int = 3,
 ) -> list[tuple[list[Candle], list[Candle], Candle]]:
-    """Each sample: 15 closed M1 ending at T, 3 future M5 starting at T. No overlap into X."""
-    if not m1 or not m5:
+    """Each sample: 3 closed M5 ending at T, 3 future M5 after T. No overlap into X."""
+    del m1
+    if not m5:
         return []
-    m1_index = {c.timestamp: i for i, c in enumerate(m1)}
     out: list[tuple[list[Candle], list[Candle], Candle]] = []
-    for i, bar in enumerate(m5[:-horizon]):
-        last_m1_ts = bar.timestamp + timedelta(minutes=4)
-        idx = m1_index.get(last_m1_ts)
-        if idx is None or idx + 1 < lookback:
-            continue
+    for i in range(lookback - 1, len(m5) - horizon):
+        bar = m5[i]
+        window = m5[i + 1 - lookback : i + 1]
         future = m5[i + 1 : i + 1 + horizon]
-        if len(future) < horizon or future[0].timestamp.date() != bar.timestamp.date():
+        if len(window) != lookback or len(future) != horizon:
             continue
-        window = m1[idx + 1 - lookback : idx + 1]
-        if len(window) != lookback:
+        day = bar.timestamp.date()
+        if any(c.timestamp.date() != day for c in (*window, *future)):
             continue
         if window[-1].timestamp >= future[0].timestamp:
             continue
@@ -182,21 +192,23 @@ def m1_window_for_closed_m5(
 
 
 def live_features_for_closed_m5(
-    m1: list[Candle],
     m5: list[Candle],
     closed_m5: Candle,
     *,
-    lookback: int = 15,
+    lookback: int = 3,
     prior_n: int = 6,
 ) -> tuple[list[Candle], list[Candle]]:
-    """Live features at M5 close: same 15 M1 window and prior M5 as the study (includes the closed bar)."""
-    window = m1_window_for_closed_m5(m1, closed_m5, lookback=lookback)
+    """Live features at M5 close: last 3 M5 including the closed bar, plus earlier M5 the same day."""
     same = [
         c
         for c in m5
         if c.timestamp.date() == closed_m5.timestamp.date() and c.timestamp <= closed_m5.timestamp
     ]
-    return window, same[-prior_n:]
+    if len(same) < lookback:
+        return [], []
+    window = same[-lookback:]
+    prior = same[:-lookback][-prior_n:]
+    return window, prior
 
 
 def prior_m5_bars(

@@ -14,6 +14,8 @@ STRUCT_DIM = 27
 N_BLOCKS = 3
 BLOCK_M1 = 5
 BLOCK_OHLC_VOL_DIM = N_BLOCKS * (BLOCK_M1 * 4 + BLOCK_M1)
+M5_BARS = 3
+M5_OHLC_VOL_DIM = M5_BARS * 5
 VOL_SIG_DIM = 10
 
 
@@ -53,6 +55,31 @@ def window_vector(candles: list[Candle], expected: int = 15) -> np.ndarray:
                 (bar.high - last) / scale,
                 (bar.low - last) / scale,
                 (bar.close - last) / scale,
+            ]
+        )
+    return np.asarray(vals, dtype=float)
+
+
+def m5_bar_vectors(candles: list[Candle], n: int = M5_BARS) -> np.ndarray:
+    """3 M5 bars: ATR-normalized OHLC + volume ratio per bar."""
+    dim = n * 5
+    if not candles:
+        return np.zeros(dim, dtype=float)
+    bars = list(candles[-n:])
+    while len(bars) < n:
+        bars.insert(0, bars[0])
+    last = bars[-1].close
+    scale = max(atr_proxy(bars), 1e-9)
+    vol_scale = max(float(np.mean([max(c.volume, 0.0) for c in bars])), 1e-9)
+    vals: list[float] = []
+    for bar in bars:
+        vals.extend(
+            [
+                (bar.open - last) / scale,
+                (bar.high - last) / scale,
+                (bar.low - last) / scale,
+                (bar.close - last) / scale,
+                max(bar.volume, 0.0) / vol_scale,
             ]
         )
     return np.asarray(vals, dtype=float)
@@ -209,13 +236,13 @@ def prior_m5_features(prior: list[Candle] | None) -> np.ndarray:
 
 
 def daytrade_features(candles: list[Candle], prior_m5: list[Candle] | None = None) -> np.ndarray:
-    blocks = m1_block_vectors(candles)
+    bars = m5_bar_vectors(candles)
     struct = _structure_features(candles)
     vol_sig = volume_pattern_features(candles)
     chart = classify_chart(candles)
     onehot = np.zeros(len(ChartType), dtype=float)
     onehot[CHART_INDEX[chart]] = 1.0
-    return np.concatenate([blocks, struct, vol_sig, onehot, prior_m5_features(prior_m5)])
+    return np.concatenate([bars, struct, vol_sig, onehot, prior_m5_features(prior_m5)])
 
 
 def slope_norm(candles: list[Candle]) -> float:

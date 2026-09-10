@@ -96,7 +96,9 @@ class ExecutionConfig:
 class MlConfig:
     min_train_rows: int = 200
     daytrade_lookback_m1: int = 15
+    daytrade_lookback_m5: int = 3
     horizon_m5: int = 3
+    horizon_m1: int = 15
 
 
 @dataclass

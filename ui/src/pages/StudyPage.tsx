@@ -20,7 +20,7 @@ const SIGNAL_CASES: { key: CaseKey; label: string; help: string }[] = [
   {
     key: 'last_candles',
     label: 'Últimos candles',
-    help: 'Operação sempre no M5. Os 15 minutos em M1 só montam o tensor da estratégia dos últimos candles de 5 min.',
+    help: 'Operação sempre no M5. Os 3 candles de 5 min montam o tensor e o tipo previsto dos próximos 3 de 5 min.',
   },
 ]
 const CASE_HELP = Object.fromEntries(SIGNAL_CASES.map((c) => [c.key, c.help])) as Record<CaseKey, string>
@@ -240,7 +240,7 @@ function CaseCompare({
   onPick,
 }: {
   parecer: Parecer
-  lookback: { m1: number; m5: number }
+  lookback: { m1: number; m5: number; horizon_m5?: number; horizon_m1?: number }
   onPick: (bank?: BankKey) => void
 }) {
   const rows = parecer.by_case?.length
@@ -258,8 +258,9 @@ function CaseCompare({
       <h2 className="mt-2 font-display text-3xl font-bold">{parecer.headline}</h2>
       <p className="mt-3 max-w-3xl text-muted-foreground">
         Número grande = P&amp;L no teste da banca.{' '}
-        {parecer.n_months_note} Acerto do daytrade: {pct(hit)}. Os {lookback.m1} candles de 1 min entram só como
-        contexto dos últimos {lookback.m5} de 5 min. {parecer.dd_floor}
+        {parecer.n_months_note} Acerto do daytrade: {pct(hit <= 1 ? hit * 100 : hit)}. Os {lookback.m5} candles de 5 min entram como
+        contexto e como alvo do tipo dos próximos {lookback.horizon_m5 ?? lookback.m5} de 5 min. Operação nos{' '}
+        {lookback.m5} de 5 min. {parecer.dd_floor}
       </p>
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {BANKS.map((bank) => {
@@ -358,7 +359,7 @@ export function StudyPage() {
     )
   }
 
-  const lookback = data.lookback ?? { m1: 15, m5: 3 }
+  const lookback = data.lookback ?? { m1: 0, m5: 3, horizon_m5: 3 }
   const leak = data.timeframes.m5?.leakage ?? data.timeframes.m1?.leakage
   const m = side?.metrics
   const periods = side?.by_period ?? winner?.by_period
@@ -402,8 +403,9 @@ export function StudyPage() {
           O robô lê os últimos candles de 5 min e sugere compra, venda ou não fazer nada.
         </h1>
         <p className="mt-5 max-w-2xl animate-fade-up text-lg text-muted-foreground [animation-delay:140ms]">
-          Mini índice WIN$ contínuo. Treino até dez/2024, teste jan/2025–ago/2026. Sinal no fechamento do M5. Os 15
-          candles de 1 min só alimentam essa estratégia. {leak?.n_removed ?? 0} candles repetidos saíram do teste.
+          Mini índice WIN$ contínuo. Treino até dez/2024, teste jan/2025–ago/2026. Sinal no fechamento do M5. Os 3
+          candles de 5 min alimentam o contexto e a previsão do gráfico dos próximos 15 minutos (3×5 min).{' '}
+          {leak?.n_removed ?? 0} candles repetidos saíram do teste.
         </p>
         <div className="mt-8 grid gap-4 md:grid-cols-1">
           {SIGNAL_CASES.map((item) => (
@@ -411,7 +413,8 @@ export function StudyPage() {
               <p className="font-display text-lg font-semibold">{item.label}</p>
               <p className="mt-2 text-sm text-muted-foreground">{item.help}</p>
               <p className="mt-3 text-xs text-muted-foreground">
-                Contexto: {lookback.m1} × 1 min. Operação: {lookback.m5} × 5 min.
+                Contexto: {lookback.m5} × 5 min. Previsão: {lookback.horizon_m5 ?? lookback.m5} × 5 min. Operação:{' '}
+                {lookback.m5} × 5 min.
               </p>
             </div>
           ))}

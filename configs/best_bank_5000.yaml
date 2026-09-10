@@ -33,7 +33,7 @@ filters:
   lunch_start: '11:00'
   lunch_end: '14:30'
   gold_hours_only: true
-  min_hit_pct: 0.59
+  min_hit_pct: 0.77
   swing_weight: 0.0
   fib_weight: 0.0
   first_block_minutes: 15
@@ -47,7 +47,9 @@ execution:
 ml:
   min_train_rows: 200
   daytrade_lookback_m1: 15
+  daytrade_lookback_m5: 3
   horizon_m5: 3
+  horizon_m1: 15
 mt5:
   enabled: false
   symbol: WIN$

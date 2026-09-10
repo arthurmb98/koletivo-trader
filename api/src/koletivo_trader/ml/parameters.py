@@ -12,7 +12,7 @@ from koletivo_trader.domain.fibonacci import fib_boost
 from koletivo_trader.domain.fusion import fuse_signals
 from koletivo_trader.domain.market import classify_chart
 from koletivo_trader.domain.models import Candle, Signal, Trade
-from koletivo_trader.domain.product import BANKS
+from koletivo_trader.domain.product import BANKS, HORIZON_M5, LOOKBACK_M5
 from koletivo_trader.domain.risk import contracts_for_bank
 from koletivo_trader.domain.session import SessionFilter
 from koletivo_trader.ml.features import daytrade_features, slope_norm
@@ -86,7 +86,7 @@ def _prepare(
             continue
         if getattr(model.recipe, "morning_only", False) and ts.hour >= 11:
             continue
-        filtered.append((window, future, entry_bar, prior_m5_bars(m5, entry_bar, index=m5_index)))
+        filtered.append((window, future, entry_bar, prior_m5_bars(m5, window[0], index=m5_index)))
     if not filtered:
         return []
     if verbose:
@@ -371,7 +371,7 @@ def prepare_eval(
     swing: SwingModel,
     verbose: bool = True,
 ) -> list[_Prepared]:
-    windows = leak_free_windows(m1, m5)
+    windows = leak_free_windows(m1, m5, lookback=LOOKBACK_M5, horizon=HORIZON_M5)
     if verbose:
         print(f"  {len(windows)} janelas brutas, swing + features…", flush=True)
     swing_by_day = _swing_map(m5, m5_prev_days, swing)
@@ -454,7 +454,7 @@ def search_parameters(
                 params["swing_weight"],
                 params["fib_weight"],
                 bank_value,
-                params["offset_points"],
+                0.0,
             )
 
         elite = run_genetic_search(evaluate, population=24, generations=16, elite=4, seed=seed)
@@ -467,7 +467,7 @@ def search_parameters(
             elite.swing_weight,
             bank,
             elite.fib_weight,
-            elite.offset_points,
+            0.0,
         )
         if confirm and confirm is not tune:
             conf = _score_prepared(
@@ -479,7 +479,7 @@ def search_parameters(
                 elite.swing_weight,
                 bank,
                 elite.fib_weight,
-                elite.offset_points,
+                0.0,
             )
             print(
                 f"  confirm banca {int(bank)}: n={conf.n_trades} wr={conf.win_rate:.1f}% pnl={conf.net_pnl:.0f}",

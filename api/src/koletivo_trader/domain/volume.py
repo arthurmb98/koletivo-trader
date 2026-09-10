@@ -9,7 +9,7 @@ def volume_pattern_features(candles: list[Candle]) -> np.ndarray:
     """Bar-volume signatures: confirmation, exhaustion, breakout, fakeout, absorption, A/D, liquidity."""
     n = 10
     out = np.zeros(n, dtype=float)
-    if len(candles) < 5:
+    if len(candles) < 3:
         return out
     vols = np.array([max(c.volume, 0.0) for c in candles], dtype=float)
     closes = np.array([c.close for c in candles], dtype=float)
@@ -20,7 +20,7 @@ def volume_pattern_features(candles: list[Candle]) -> np.ndarray:
     last_v = float(vols[-1])
     rvol = last_v / max(mean20, 1e-9)
     out[0] = min(rvol / 3.0, 2.0)
-    px_up = closes[-1] >= closes[-5]
+    px_up = closes[-1] >= closes[0] if len(closes) < 5 else closes[-1] >= closes[-5]
     vol_up = last_v >= mean20
     out[1] = 1.0 if px_up and vol_up else 0.0
     out[2] = 1.0 if px_up and not vol_up else 0.0

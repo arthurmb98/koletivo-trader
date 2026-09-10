@@ -173,7 +173,7 @@ export type StudyFile = {
   banks: number[]
   cases?: CaseKey[]
   case_labels?: Record<string, string>
-  lookback?: { m1: number; m5: number }
+  lookback?: { m1: number; m5: number; horizon_m5?: number; horizon_m1?: number }
   timeframes_list?: TfKey[]
   timeframe_labels?: Record<string, string>
   n_configs_total: number

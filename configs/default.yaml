@@ -47,7 +47,9 @@ execution:
 ml:
   min_train_rows: 200
   daytrade_lookback_m1: 15
+  daytrade_lookback_m5: 3
   horizon_m5: 3
+  horizon_m1: 15
 mt5:
   enabled: false
   symbol: WIN$

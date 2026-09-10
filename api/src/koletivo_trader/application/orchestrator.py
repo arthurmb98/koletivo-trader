@@ -27,7 +27,7 @@ from koletivo_trader.domain.risk import RiskCalculator, contracts_for_bank, prot
 from koletivo_trader.domain.session import SessionFilter
 from koletivo_trader.ml.labels import live_features_for_closed_m5
 from koletivo_trader.ml.models import DaytradeModel, SwingModel, group_days
-from koletivo_trader.domain.product import CASE, LOOKBACK_M1, TIMEFRAME
+from koletivo_trader.domain.product import CASE, LOOKBACK_M5, TIMEFRAME
 from koletivo_trader.paths import RESULTS_DIR
 
 OFF_GOLD_POLL_SEC = 5.0
@@ -426,10 +426,9 @@ class LiveEngine:
         if not self.session.allows_live(entry_ts):
             self.skip_reason = "fora_da_sessao"
             return
-        m1 = self._closed("m1", LOOKBACK_M1 + 30)
-        window, prior_m5 = live_features_for_closed_m5(m1, m5, last, lookback=LOOKBACK_M1)
-        if len(window) < LOOKBACK_M1:
-            self.skip_reason = "sem_m1"
+        window, prior_m5 = live_features_for_closed_m5(m5, last, lookback=LOOKBACK_M5)
+        if len(window) < LOOKBACK_M5:
+            self.skip_reason = "sem_m5"
             return
         stop, take = self.risk.levels(Side.BUY, last.close)
         raw = self.daytrade.predict(window, last.close, stop, take, prior_m5)

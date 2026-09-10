@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from koletivo_trader.application.replay import replay_meta
-from koletivo_trader.domain.product import BANKS, CASE, HORIZON_M5, LOOKBACK_M1, TIMEFRAME
+from koletivo_trader.domain.product import BANKS, CASE, HORIZON_M5, LOOKBACK_M5, TIMEFRAME
 from koletivo_trader.domain.risk import contracts_for_bank
 from koletivo_trader.ml.parameters import search_parameters
 
@@ -10,7 +10,7 @@ def test_product_locks_m5_last_candles_and_four_banks() -> None:
     assert CASE == "last_candles"
     assert TIMEFRAME == "m5"
     assert BANKS == (500.0, 1000.0, 5000.0, 10000.0)
-    assert LOOKBACK_M1 == 15
+    assert LOOKBACK_M5 == 3
     assert HORIZON_M5 == 3
     assert contracts_for_bank(10000) == 10
 

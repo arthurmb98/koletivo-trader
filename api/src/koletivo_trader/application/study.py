@@ -13,7 +13,7 @@ from koletivo_trader.domain.models import Candle
 from koletivo_trader.ml.models import RECIPES, DaytradeModel, DaytradeRecipe, SwingModel, group_days
 from koletivo_trader.ml.parameters import ParamResult, gains_beat_losses, prepare_eval, score_fixed, search_parameters
 from koletivo_trader.paths import CONFIGS_DIR, RESULTS_DIR, UI_PUBLIC
-from koletivo_trader.domain.product import BANKS, CASE, HORIZON_M5, LOOKBACK_M1, TIMEFRAME
+from koletivo_trader.domain.product import BANKS, CASE, HORIZON_M5, LOOKBACK_M5, TIMEFRAME
 
 VAL_CUTOFF = date(2024, 7, 1)
 
@@ -267,7 +267,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         data["filters"]["min_hit_pct"] = result.min_hit_pct
         data["filters"]["swing_weight"] = result.swing_weight
         data["filters"]["fib_weight"] = result.fib_weight
-        data["execution"]["offset_points"] = result.offset_points
+        data["execution"]["offset_points"] = 0.0
         path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
     joblib.dump(
         {
@@ -452,8 +452,8 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
         "disclaimer": "Não é recomendação de investimento. Resultado passado não garante resultado futuro.",
         "how_it_works": [
             "O swing lê o pregão anterior (M5) e classifica o tipo de dia.",
-            "O daytrade usa 15 M1 só como contexto dos últimos candles de 5 min e decide compra, venda ou não fazer nada.",
-            "O tempo gráfico de operação é sempre 5 min, caso últimos candles. Só a banca muda o YAML.",
+            "O daytrade lê 3 candles de 5 min e prevê o tipo dos próximos 3 de 5 min, mais o sinal.",
+            "A operação sai no fechamento do M5. Só a banca muda o YAML.",
         ],
         "insights": {
             "worked": [
@@ -488,8 +488,8 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
             ],
             "monthly": [],
             "strategy": [
-                "15 M1 de contexto → sinal no fechamento do M5",
-                "Stop e gain na ordem",
+                "3 M5 de contexto → tipo previsto nos próximos 3 M5 e o sinal",
+                "Sinal no fechamento do M5; stop e gain na ordem",
                 "Limite diário de trades e de perda",
             ],
             "dd_floor": "Drawdown comparado à banca da config.",
@@ -504,7 +504,7 @@ def _build_study(cfg, day_scores, swing_scores, winners, recipe: DaytradeRecipe,
         "banks": [int(k) for k in winners],
         "cases": [CASE],
         "case_labels": {CASE: "Últimos candles"},
-        "lookback": {"m1": LOOKBACK_M1, "m5": HORIZON_M5},
+        "lookback": {"m1": 0, "m5": LOOKBACK_M5, "horizon_m5": HORIZON_M5},
         "timeframes_list": [TIMEFRAME],
         "timeframe_labels": {TIMEFRAME: "5 min"},
         "n_configs_total": len(winners),

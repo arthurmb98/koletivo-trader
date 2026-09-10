@@ -12,6 +12,7 @@ from koletivo_trader.domain.copy import phrase_for
 from koletivo_trader.domain.enums import ChartType, DayType, Side, TradeResult
 from koletivo_trader.domain.market import classify_chart, classify_day, heuristic_side
 from koletivo_trader.domain.models import Candle, SessionContext, Signal
+from koletivo_trader.domain.product import HORIZON_M5, LOOKBACK_M5
 from koletivo_trader.domain.session import SessionFilter
 from koletivo_trader.ml.features import _linreg, atr_proxy, daytrade_features, slope_norm, swing_features
 from koletivo_trader.ml.labels import (
@@ -21,7 +22,6 @@ from koletivo_trader.ml.labels import (
     label_side,
     leak_free_windows,
     prior_m5_bars,
-    same_day_m1,
     simulate_touch,
 )
 
@@ -159,10 +159,9 @@ class DaytradeModel:
         gain_points: float,
         max_samples: int | None = None,
     ) -> dict[str, float]:
-        del stop_points, gain_points
-        windows = leak_free_windows(m1, m5)
+        del m1, stop_points, gain_points
+        windows = leak_free_windows(None, m5, lookback=LOOKBACK_M5, horizon=HORIZON_M5)
         m5_index = {c.timestamp: i for i, c in enumerate(m5)}
-        m1_index = {c.timestamp: i for i, c in enumerate(m1)}
         rows = []
         kept = 0
         for window, future, entry_bar in windows:
@@ -171,8 +170,7 @@ class DaytradeModel:
             kept += 1
             if kept % 3:
                 continue
-            path = same_day_m1(m1, entry_bar.timestamp, index=m1_index, n=15)
-            rows.append((window, path or future, entry_bar, prior_m5_bars(m5, entry_bar, index=m5_index)))
+            rows.append((window, future, entry_bar, prior_m5_bars(m5, window[0], index=m5_index)))
         if max_samples and len(rows) > max_samples:
             rng = np.random.default_rng(7)
             pick = rng.choice(len(rows), size=max_samples, replace=False)
@@ -190,9 +188,9 @@ class DaytradeModel:
             stop, gain = adaptive_barriers(window, stop_mult=self.recipe.stop_mult, gain_mult=self.recipe.gain_mult)
             side = self._direction(window, entry_bar, future)
             feats = daytrade_features(window, prior)
-            if len(future) >= 8:
+            if len(future) >= HORIZON_M5:
                 x_chart.append(feats)
-                y_chart.append(classify_chart(future[:15]).value)
+                y_chart.append(classify_chart(future).value)
             if side is Side.BUY:
                 n_buy += 1
                 x_dir.append(feats)

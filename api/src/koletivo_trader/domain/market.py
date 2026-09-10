@@ -70,8 +70,8 @@ def classify_day(candles: list[Candle]) -> DayType:
 
 
 def classify_chart(candles: list[Candle]) -> ChartType:
-    """Micro structure of ~15 M1 bars (equivalent to three M5)."""
-    if len(candles) < 8:
+    """Micro structure of a short window (3 M5)."""
+    if len(candles) < 3:
         return ChartType.INDECISION
     highs = np.array([c.high for c in candles], dtype=float)
     lows = np.array([c.low for c in candles], dtype=float)
