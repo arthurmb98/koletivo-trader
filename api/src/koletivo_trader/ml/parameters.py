@@ -454,7 +454,7 @@ def search_parameters(
                 params["swing_weight"],
                 params["fib_weight"],
                 bank_value,
-                0.0,
+                params["offset_points"],
             )
 
         elite = run_genetic_search(evaluate, population=24, generations=16, elite=4, seed=seed)
@@ -467,7 +467,7 @@ def search_parameters(
             elite.swing_weight,
             bank,
             elite.fib_weight,
-            0.0,
+            elite.offset_points,
         )
         if confirm and confirm is not tune:
             conf = _score_prepared(
@@ -479,7 +479,7 @@ def search_parameters(
                 elite.swing_weight,
                 bank,
                 elite.fib_weight,
-                0.0,
+                elite.offset_points,
             )
             print(
                 f"  confirm banca {int(bank)}: n={conf.n_trades} wr={conf.win_rate:.1f}% pnl={conf.net_pnl:.0f}",

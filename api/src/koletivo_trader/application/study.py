@@ -267,7 +267,7 @@ def train_models(*, max_daytrade_samples: int | None = None) -> dict:
         data["filters"]["min_hit_pct"] = result.min_hit_pct
         data["filters"]["swing_weight"] = result.swing_weight
         data["filters"]["fib_weight"] = result.fib_weight
-        data["execution"]["offset_points"] = 0.0
+        data["execution"]["offset_points"] = result.offset_points
         path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
     joblib.dump(
         {

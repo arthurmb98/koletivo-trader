@@ -224,8 +224,8 @@ def test_genetic_repair_keeps_daytrade_majority_and_rr() -> None:
 
     assert LO[2] == 0.17
     assert HI[2] == 0.83
-    assert LO[5] == 0.0
-    assert HI[5] == 0.0
+    assert LO[5] == -50.0
+    assert HI[5] == 50.0
     g = repair_genome([100.0, 120.0, 0.5, 0.3, 0.3, 7.0])
     p = unpack(g)
     assert p["swing_weight"] + p["fib_weight"] <= 0.4 + 1e-9

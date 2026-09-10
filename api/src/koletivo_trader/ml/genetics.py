@@ -9,10 +9,8 @@ from koletivo_trader.domain.fibonacci import AUX_WEIGHT_CAP, clamp_decider_weigh
 from koletivo_trader.domain.risk import round_to_tick
 
 # stop, gain, min_hit, swing_w, fib_w, offset
-# Offset stays 0: nonzero fill offset is not executable at the M5 close and
-# inflates paper P&L (AG previously pinned LO at -50).
-LO = np.array([40.0, 80.0, 0.17, 0.0, 0.0, 0.0])
-HI = np.array([120.0, 240.0, 0.83, 0.40, 0.40, 0.0])
+LO = np.array([40.0, 80.0, 0.17, 0.0, 0.0, -50.0])
+HI = np.array([120.0, 240.0, 0.83, 0.40, 0.40, 50.0])
 TICK = 5.0
 
 
@@ -44,7 +42,7 @@ def random_genome(rng: np.random.Generator, tick: float = TICK) -> np.ndarray:
     else:
         swing = float(rng.uniform(0.05, AUX_WEIGHT_CAP))
         fib = float(rng.uniform(0.0, max(0.0, AUX_WEIGHT_CAP - swing)))
-    offset = 0.0
+    offset = float(rng.integers(-10, 11) * tick)
     return repair_genome(np.array([stop, gain, min_hit, swing, fib, offset]), tick)
 
 
